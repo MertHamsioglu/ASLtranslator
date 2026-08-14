@@ -18,7 +18,7 @@
  *   import { HandLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
  *
  *   const vision = await FilesetResolver.forVisionTasks(
- *     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+ *     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm"
  *   );
  *   const landmarker = await HandLandmarker.createFromOptions(vision, {
  *     baseOptions: {
@@ -31,11 +31,31 @@
  *     numHands: 1,
  *   });
  *
- * Two things that will bite you:
+ * THE VERSION IN THAT URL MUST MATCH package.json (currently 1.0.1). The JS
+ * loader and the .wasm binary are a matched pair — mixing versions fails at
+ * init with an error that does not say "version mismatch". If you bump the
+ * dependency, bump the URL in the same commit.
+ *
+ * Two ways to make that impossible instead of merely documented, if you'd
+ * rather not rely on the CDN at all (demo-day wifi is a real risk):
+ *   - the package exposes the wasm as subpath exports, so Vite can bundle and
+ *     fingerprint them for you:
+ *       import loader from "@mediapipe/tasks-vision/vision_wasm_internal.js?url";
+ *       import binary from "@mediapipe/tasks-vision/vision_wasm_internal.wasm?url";
+ *     then hand createFromOptions a fileset literal instead of calling
+ *     forVisionTasks: { wasmLoaderPath: loader, wasmBinaryPath: binary }
+ *   - or copy node_modules/@mediapipe/tasks-vision/wasm into public/ at
+ *     postinstall. Simpler, but it's 35MB and all of it lands in dist.
+ * The .task model file is a separate ~7MB download from Google's CDN either
+ * way; vendor it into public/model/ too if you want a fully offline demo.
+ *
+ * Three things that will bite you:
  *   - detectForVideo() throws if the timestamp isn't STRICTLY increasing.
  *     rAF can fire twice on the same video frame; track lastTimestamp and skip.
  *   - delegate:"GPU" fails outright on some machines. Catch and retry with
  *     "CPU" — slower, but it runs on Aaron's laptop and on demo day.
+ *   - the result has BOTH `handedness` and a deprecated `handednesses`. Use
+ *     `result.handedness[0]`. Most tutorials online still use the old one.
  */
 
 // eslint-disable-next-line no-unused-vars

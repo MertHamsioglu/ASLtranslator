@@ -24,13 +24,16 @@ createRecognizer({ onPrediction }) -> Promise<{ attach(videoEl), stop() }>
 
 ```js
 {
-  letter: "A".."Z" | null,      // null when no hand in frame or class is NONE
+  letter: one of LETTERS | null, // 24 static letters — no J, no Z. null when no hand
   confidence: 0..1,              // softmax score of the winning class
   landmarks: [{x, y, z}] | null  // 21 points, raw MediaPipe coords, normalized 0..1
 }
 ```
 
-Three rules that are part of the contract, not implementation details:
+`letter` is one of the 24 values in `LETTERS` from `contract.js`, never an arbitrary A–Z
+character. Don't build a 26-slot UI.
+
+Four rules that are part of the contract, not implementation details:
 
 1. **`letter` is `null`** when there's no hand, or when the top class is `NONE`.
    Aaron never sees the string `"NONE"`.
@@ -40,11 +43,12 @@ Three rules that are part of the contract, not implementation details:
    Writing this down now saves an hour of "why is the thumb on the wrong side."
 3. **`landmarks` is non-null whenever a hand is detected**, even when `letter` is `null`.
    The overlay should keep drawing during transitions — that's most of what makes it feel alive.
-4. **A camera failure must not stop the recognizer.** `createRecognizer` is created and
-   `onPrediction` fires whether or not `getUserMedia` succeeded; `attach()` simply never
-   receives a video element. Denied permission, no webcam, headless browser — the app
-   still runs on the mock. This is what makes "never blocked" true in practice rather
-   than on paper.
+4. **A camera failure must not stop the recognizer.** `createRecognizer` is called and
+   `onPrediction` fires whether or not `getUserMedia` succeeded. **`attach()` is simply
+   never called** when there's no video feed — so the real recognizer must not assume
+   `attach()` always runs, and must not blow up if `stop()` arrives without it. Denied
+   permission, no webcam, headless browser: the app still runs on the mock. This is what
+   makes "never blocked" true in practice rather than on paper.
 
 Changing this contract requires both of you to agree, in writing, in the same commit.
 
@@ -53,8 +57,9 @@ Changing this contract requires both of you to agree, in writing, in the same co
 ## Phase 0 — DONE ✅
 
 Already committed. Everything below is the record of what exists and why, not a to-do.
-Clone, `npm install`, `npm run dev`, and you should see a live camera feed with random
-letters appearing. If you do, you're ready to start your half.
+Clone, `npm install`, `npm run dev`, and you should see a camera feed with random letters
+appearing. Deny the camera prompt and you should *still* see random letters, plus an error
+banner — that's rule 4 working. Either way you're ready to start your half.
 
 The goal was that when you split up, **both of you can run the full app end to end** —
 real camera, fake brain — with zero missing imports. That is the state of `main` now.
@@ -76,7 +81,7 @@ person's laptop. So all of these are on `main` already, stubbed where not yet bu
 
 | File | State | Owner |
 | --- | --- | --- |
-| `src/lib/contract.js` | done — `LETTERS`, `CLASSES`, `NUM_FEATURES`, `HAND_CONNECTIONS` | **both, frozen** |
+| `src/lib/contract.js` | done — `LETTERS`, `NONE_LABEL`, `CLASSES`, `NUM_FEATURES`, `NUM_LANDMARKS`, `HAND_CONNECTIONS`, `TARGET_FPS` | **both, frozen** |
 | `src/lib/mockRecognizer.js` | done — full working mock | Aaron |
 | `src/lib/recognizer.js` | delegates to the mock | Mert |
 | `src/lib/handTracker.js` | stub, throws — spec in the file header | Mert (M1) |
@@ -157,7 +162,7 @@ three entries, `npm run lint` is silent.
 import { HandLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 const vision = await FilesetResolver.forVisionTasks(
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm"
 );
 const landmarker = await HandLandmarker.createFromOptions(vision, {
   baseOptions: {
@@ -176,8 +181,17 @@ You get `result.landmarks[0]` (21 points) and `result.handedness[0]`. Log until 
 Wrap it as `createHandTracker({ onFrame })` where `onFrame({ landmarks, handedness })` —
 same callback shape as the contract so M5 is a thin layer, not a rewrite.
 
-> Gotcha: `detectForVideo` throws if you pass a timestamp that isn't strictly increasing.
-> Guard against duplicate rAF ticks on the same video frame.
+> **The version in that CDN URL must match `package.json`** — currently `1.0.1`. The JS
+> loader and the `.wasm` binary are a matched pair, and mixing versions fails at init
+> with an error that doesn't mention versions. The header of `handTracker.js` has two
+> ways to make this structural instead of remembered, including bundling the wasm through
+> Vite so the CDN isn't in the path at all.
+>
+> `detectForVideo` throws if you pass a timestamp that isn't strictly increasing. Guard
+> against duplicate rAF ticks on the same video frame.
+>
+> The result carries both `handedness` and a deprecated `handednesses`. Use
+> `result.handedness[0]`; most tutorials online still show the old one.
 
 **M2 · Normalize** — `src/lib/normalize.js` — 21 points → 63 numbers, position and scale invariant:
 
@@ -189,7 +203,8 @@ Step 1 before step 2 — one model handles both hands instead of you collecting 
 
 Test: hold one letter, walk toward and away from the camera. The 63 numbers should barely move.
 
-**M3 · Collect mode** — `src/collect.jsx` — styling irrelevant, Aaron isn't touching it:
+**M3 · Collect mode** — `src/pages/CollectPage.jsx` — styling irrelevant, Aaron isn't
+touching it:
 
 - dropdown to pick a letter (from `CLASSES`, so `NONE` is in the list)
 - 3-second countdown, then capture 200 normalized frames
@@ -210,7 +225,8 @@ JSON format — agree on it once so merging two people's data is `[].concat()`:
 Save as `data/mert-<date>.json` and commit it. Data in git is fine at this size and means
 neither of you can lose it.
 
-**M4 · Train** — `src/train-page.jsx` + `src/lib/train.js`, in-browser with tfjs, no Python:
+**M4 · Train** — `src/pages/TrainPage.jsx` + `src/lib/train.js`, in-browser with tfjs, no
+Python:
 
 ```js
 const model = tf.sequential({
@@ -331,7 +347,7 @@ have anything to lose* is far less stressful than debugging it on demo day.
 | `src/collect.jsx`, `src/train-page.jsx`, `collect.html`, `train.html` | Mert |
 | `public/model/*` | Mert |
 | `src/lib/mockRecognizer.js` | Aaron |
-| `src/App.jsx`, `src/components/*`, `src/index.css` | Aaron |
+| `src/App.jsx`, `src/main.jsx`, `src/components/*`, `src/index.css` | Aaron |
 | `index.html` | Aaron |
 | `src/lib/contract.js`, `vite.config.js`, `SOW.md` | both, by agreement |
 | `data/*.json` | both — additive only, one file each |
@@ -346,6 +362,11 @@ have anything to lose* is far less stressful than debugging it on demo day.
   sequence instead of a single frame.
 - **`delegate: "GPU"` fails on some machines.** Catch it and fall back to `"CPU"` — slower
   but it runs. Better than a blank screen on someone else's laptop.
+- **MediaPipe's JS and WASM versions must match.** The npm package is `1.0.1`; a CDN URL
+  pinned to any other version fails at init without saying why. Bump both together.
+- **Both MediaPipe assets come off a CDN** — 35MB of wasm and a 7MB `.task` model. First
+  load on a cold cache is slow, and a dead network means a dead demo. If the venue's wifi
+  is a question mark, vendor them before demo day rather than during it.
 - **Camera permission is per-origin.** Localhost and your deploy URL prompt separately.
 - **React StrictMode double-mounts effects in dev.** Any recognizer, rAF loop, or media
   stream you start in a `useEffect` must be torn down in its cleanup, or you'll get two
