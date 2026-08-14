@@ -1,0 +1,62 @@
+/*
+ * OWNER: Aaron — A5
+ *
+ * Stripped to a bare reset on purpose. The Vite starter's purple-accent theme
+ * was deleted so you're picking a direction rather than editing away someone
+ * else's. Build the identity out of the hand-landmark skeleton — the 21-point
+ * topology is strong line art and it beats decorating a generic shell.
+ */
+
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+}
+
+/* Phase 0 scaffolding styles — delete these as you build the real UI. */
+
+.phase0 {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.phase0 video {
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 4 / 3;
+  background: #111;
+  border-radius: 8px;
+  /* Mirror the preview so it feels like a mirror.
+     NOTE: this does NOT flip the landmark coordinates. See SOW.md contract rule 2. */
+  transform: scaleX(-1);
+}
+
+.phase0 .letter {
+  font-size: 96px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  min-height: 96px;
+}
+
+.phase0 .meta {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.phase0 .error {
+  color: #c0392b;
+  opacity: 1;
+}

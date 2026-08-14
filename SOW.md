@@ -40,145 +40,108 @@ Three rules that are part of the contract, not implementation details:
    Writing this down now saves an hour of "why is the thumb on the wrong side."
 3. **`landmarks` is non-null whenever a hand is detected**, even when `letter` is `null`.
    The overlay should keep drawing during transitions — that's most of what makes it feel alive.
+4. **A camera failure must not stop the recognizer.** `createRecognizer` is created and
+   `onPrediction` fires whether or not `getUserMedia` succeeded; `attach()` simply never
+   receives a video element. Denied permission, no webcam, headless browser — the app
+   still runs on the mock. This is what makes "never blocked" true in practice rather
+   than on paper.
 
 Changing this contract requires both of you to agree, in writing, in the same commit.
 
 ---
 
-## Phase 0 — Together, ~40 min, one laptop
+## Phase 0 — DONE ✅
 
-Do this side by side or on a screen share. It's the only synchronous part. The goal is
-that when you split up, **both of you can run the full app end to end** — real camera,
-fake brain — with zero missing imports.
+Already committed. Everything below is the record of what exists and why, not a to-do.
+Clone, `npm install`, `npm run dev`, and you should see a live camera feed with random
+letters appearing. If you do, you're ready to start your half.
 
-### 0.1 — Scaffold in place
+The goal was that when you split up, **both of you can run the full app end to end** —
+real camera, fake brain — with zero missing imports. That is the state of `main` now.
 
-The repo already exists and is empty. Scaffold into it directly (note the `.`), so the
-repo root is the app root. Vercel and Netlify both expect that.
+### 0.1 — Stack
 
-```bash
-cd ~/Desktop/ASLtranslator && npm create vite@latest . -- --template react
-```
-
-```bash
-npm install && npm install @mediapipe/tasks-vision @tensorflow/tfjs
-```
+Vite 8 + React 19, scaffolded at the repo root (not in a subdirectory) so Vercel and
+Netlify find it without configuration. Plus `@mediapipe/tasks-vision` and
+`@tensorflow/tfjs`. Lint is `oxlint`, which ships with the Vite React template.
 
 ```bash
-npm run dev
+npm install && npm run dev
 ```
 
-Confirm the default Vite page loads before going further.
+### 0.2 — Every file both halves import already exists
 
-### 0.2 — Create every file both halves will import
+A stub that returns nothing is not a blocker; a missing file is a red screen on the other
+person's laptop. So all of these are on `main` already, stubbed where not yet built:
 
-Create all of these now, even as one-line stubs. A stub that returns nothing is not a
-blocker; a missing file is a red screen on the other person's laptop.
-
-| File | Contents at end of Phase 0 | Owner from here on |
+| File | State | Owner |
 | --- | --- | --- |
-| `src/lib/contract.js` | `LETTERS`, `NONE_LABEL`, `NUM_FEATURES` — **shared, frozen** | both (by agreement) |
+| `src/lib/contract.js` | done — `LETTERS`, `CLASSES`, `NUM_FEATURES`, `HAND_CONNECTIONS` | **both, frozen** |
+| `src/lib/mockRecognizer.js` | done — full working mock | Aaron |
 | `src/lib/recognizer.js` | delegates to the mock | Mert |
-| `src/lib/mockRecognizer.js` | real working mock (see 0.3) | Aaron |
-| `src/lib/handTracker.js` | `export async function createHandTracker() {}` | Mert |
-| `src/lib/normalize.js` | `export function normalizeLandmarks() {}` | Mert |
-| `src/lib/train.js` | empty | Mert |
-| `src/collect.jsx` + `collect.html` | Vite entry, renders "collect mode" | Mert |
-| `src/train-page.jsx` + `train.html` | Vite entry, renders "train mode" | Mert |
-| `src/components/.gitkeep` | empty | Aaron |
-| `public/model/.gitkeep` | empty | Mert |
-| `data/.gitkeep` | empty — captured JSON lands here | both |
+| `src/lib/handTracker.js` | stub, throws — spec in the file header | Mert (M1) |
+| `src/lib/normalize.js` | stub, throws — spec in the file header | Mert (M2) |
+| `src/lib/train.js` | `mergeDatasets()` written; fit loop is M4 | Mert (M4) |
+| `src/pages/CollectPage.jsx` | placeholder | Mert (M3) |
+| `src/pages/TrainPage.jsx` | placeholder | Mert (M4) |
+| `src/collect.jsx`, `src/train-page.jsx` | mount-only Vite entries | Mert |
+| `collect.html`, `train.html` | Vite entries | Mert |
+| `src/App.jsx` | throwaway Phase 0 scaffolding | Aaron |
+| `src/index.css` | bare reset + `.phase0` styles to delete | Aaron |
+| `src/components/`, `public/model/`, `data/` | empty, `.gitkeep`'d | per ownership map |
 
-`src/lib/contract.js`:
+Two things in `contract.js` worth knowing about before you go looking for them:
 
-```js
-export const LETTERS = "ABCDEFGHIKLMNOPQRSTUVWXY".split(""); // 24 — no J, no Z (they need motion)
-export const NONE_LABEL = "NONE";
-export const CLASSES = [...LETTERS, NONE_LABEL];             // 25 output units
-export const NUM_FEATURES = 63;                              // 21 landmarks x (x,y,z)
-```
+- **`CLASSES`** is the model's output order. The argmax index is meaningless without it.
+  Import it in both `train.js` and `recognizer.js`; never retype the list. This is the
+  single most bug-prone thing in the project and the constant is the fix.
+- **`HAND_CONNECTIONS`** is the 21-point topology as index pairs. Aaron draws the
+  skeleton straight off it — no need to go find the landmark diagram.
 
-`src/lib/recognizer.js`:
+### 0.3 — The mock is good enough to design against
 
-```js
-import { createMockRecognizer } from "./mockRecognizer";
+Written in Phase 0 rather than left to Aaron's first day, because Mert's M5 has to match
+its behavior and it's easier to match something that exists. It:
 
-export async function createRecognizer({ onPrediction }) {
-  return createMockRecognizer({ onPrediction });
-}
-```
+- emits every 33ms
+- **holds each letter for 10–20 ticks before switching** — random-every-tick would let
+  broken debounce logic pass, which defeats the point
+- models **three** states, not two: `LETTER`, `TRANSITION` (hand visible, no letter), and
+  `NO_HAND`. `TRANSITION` is the one people forget to simulate and exactly the state the
+  commit-lockout logic has to survive.
+- **always emits a plausible 21-point `landmarks` array** while a hand is visible, from a
+  hardcoded pose with ±0.005 jitter and a small per-letter drift. Without this Aaron
+  cannot build the skeleton overlay until Mert finishes M1 — and the overlay is the
+  visual identity of the app.
+- makes ~1 in 6 letters a low-confidence read, so the 0.7 threshold actually gets exercised
 
-### 0.3 — The mock has to be good enough to design against
-
-Aaron writes this in Phase 0 while Mert watches, because Mert's M5 has to match its
-behavior exactly. It must:
-
-- emit at ~33ms via `setInterval`
-- **hold each letter for 10–20 ticks before switching** — this is what Aaron's debounce
-  logic gets tested against, and random-every-tick would let broken debounce logic pass
-- occasionally emit `letter: null` for a stretch of ticks (hand out of frame)
-- **always emit a plausible 21-point `landmarks` array** — hardcode one real hand pose
-  and add ±0.005 of jitter per frame. Without this, Aaron cannot build the skeleton
-  overlay until Mert finishes M1, and the overlay is the visual identity of the app.
-- return `{ attach(videoEl) {}, stop() {} }` — `attach` is a no-op, `stop` clears the interval
-
-Grab a real pose to hardcode by logging one frame from MediaPipe later, or just eyeball 21
-points in a hand shape now. Either works; refine it when real data exists.
+Measured over 15s of ticks: ~69% letter frames, ~24% transition, ~7% no-hand, letter runs
+all within 10–20, zero contract violations. Tune the constants if you want a different
+mix; keep the shape.
 
 ### 0.4 — Multi-page Vite, so Mert never touches `App.jsx`
 
-This is the change that makes the ownership map airtight. Mert's collect and train tools
-get their own entry points instead of living behind a route in Aaron's app.
+This is what makes the ownership map airtight. `collect.html` and `train.html` sit at the
+repo root as their own Vite entries, wired up in `vite.config.js` under
+`build.rollupOptions.input`. Mert's tools live at `localhost:5173/collect.html` and
+`/train.html`. Zero edits to `App.jsx`, ever.
 
-`collect.html` and `train.html` at the repo root, each a copy of `index.html` pointing at
-its own script:
+The page components live in `src/pages/` and the `.jsx` entries only mount them — a file
+that both defines and mounts a component loses fast refresh, and these are the pages Mert
+will iterate on most.
 
-```html
-<!-- collect.html -->
-<!doctype html>
-<html><head><meta charset="UTF-8" /><title>collect</title></head>
-<body><div id="root"></div><script type="module" src="/src/collect.jsx"></script></body></html>
-```
-
-Then in `vite.config.js`:
-
-```js
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import { resolve } from "path";
-
-export default defineConfig({
-  plugins: [react()],
-  build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, "index.html"),
-        collect: resolve(__dirname, "collect.html"),
-        train: resolve(__dirname, "train.html"),
-      },
-    },
-  },
-});
-```
-
-Mert's tools live at `localhost:5173/collect.html` and `/train.html`. Zero edits to
-`App.jsx`, ever.
-
-### 0.5 — Baseline commit and branches
+### 0.5 — Branches
 
 ```bash
-git add -A && git commit -m "Phase 0: scaffold, contract, mock recognizer, multi-page entries"
-```
-
-```bash
-git push -u origin main && git branch mert && git branch aaron && git push origin mert aaron
+git push -u origin main && git push origin mert aaron
 ```
 
 Add each other as collaborators on GitHub. Both clone. Mert works on `mert`, Aaron on
 `aaron`, both PR into `main`.
 
-**Phase 0 is done when:** on both laptops, `npm run dev` shows a live camera feed with
-random letters appearing, and `/collect.html` loads without erroring.
+**Phase 0 exit criterion, already met:** `npm run dev` shows a camera feed with random
+letters appearing, `/collect.html` and `/train.html` load clean, `npm run build` emits all
+three entries, `npm run lint` is silent.
 
 ---
 
@@ -283,8 +246,10 @@ if (import.meta.env.VITE_USE_MOCK === "1") return createMockRecognizer({ onPredi
 
 ### Aaron — app shell + UI
 
-**A1 · Mock first** — already written in Phase 0. Refine the jitter and the null-stretches
-until it feels like a real hand entering and leaving frame.
+**A1 · Mock first** — already written in Phase 0 and verified against the contract. Read
+it before anything else; it's the spec for what your UI will receive. Refine the jitter,
+the drift, and the state probabilities until it feels like a real hand entering and
+leaving frame.
 
 **A2 · Layout** — `src/App.jsx`, `src/components/*`:
 
@@ -293,6 +258,13 @@ until it feels like a real hand entering and leaving frame.
 - confidence bar
 - text output area
 - buttons: Copy · Space · Backspace · Clear
+
+Delete the Phase 0 scaffolding in `App.jsx` and the `.phase0` block in `index.css` as you
+go — none of it is precious. The one thing worth preserving the shape of is that effect:
+create the recognizer once, always `stop()` it in cleanup, and don't let a camera failure
+prevent the recognizer from starting (contract rule 4). StrictMode mounts every effect
+twice in dev, so an uncleaned recognizer means two intervals racing and a camera light
+that won't go off.
 
 **A3 · Commit logic** — this is the real work of your half, and it decides whether the
 app feels good or terrible:
@@ -354,11 +326,13 @@ have anything to lose* is far less stressful than debugging it on demo day.
 | Path | Owner |
 | --- | --- |
 | `src/lib/handTracker.js`, `normalize.js`, `train.js` | Mert |
-| `src/collect.jsx`, `src/train-page.jsx`, `collect.html`, `train.html` | Mert |
 | `src/lib/recognizer.js` | Mert |
+| `src/pages/CollectPage.jsx`, `src/pages/TrainPage.jsx` | Mert |
+| `src/collect.jsx`, `src/train-page.jsx`, `collect.html`, `train.html` | Mert |
 | `public/model/*` | Mert |
 | `src/lib/mockRecognizer.js` | Aaron |
 | `src/App.jsx`, `src/components/*`, `src/index.css` | Aaron |
+| `index.html` | Aaron |
 | `src/lib/contract.js`, `vite.config.js`, `SOW.md` | both, by agreement |
 | `data/*.json` | both — additive only, one file each |
 
@@ -373,5 +347,8 @@ have anything to lose* is far less stressful than debugging it on demo day.
 - **`delegate: "GPU"` fails on some machines.** Catch it and fall back to `"CPU"` — slower
   but it runs. Better than a blank screen on someone else's laptop.
 - **Camera permission is per-origin.** Localhost and your deploy URL prompt separately.
+- **React StrictMode double-mounts effects in dev.** Any recognizer, rAF loop, or media
+  stream you start in a `useEffect` must be torn down in its cleanup, or you'll get two
+  of everything and blame the model for the jitter.
 - **Label order.** The argmax index means nothing without the exact `CLASSES` order used
   in training. Import it from `contract.js` in both places; never retype it.
