@@ -10,11 +10,12 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 1 is code-complete on both halves — Aaron's app shell (layout, overlay,
-commit/lockout, copy) and Mert's vision pipeline (tracking, normalization, capture, training,
-recognizer). **No model has been trained yet** — until one lands in `public/model/`, the app
-runs on a mock recognizer that satisfies the real interface exactly and says so loudly in the
-console. Nothing below marked ⬜ exists yet.
+**Status:** Phase 1 is complete on both halves and merged to `main` — Aaron's app shell
+(layout, overlay, commit/lockout, copy) and Mert's vision pipeline (tracking, normalization,
+capture, training, recognizer). **No model has been trained yet** — until one lands in
+`public/model/`, the app runs on a mock recognizer that satisfies the real interface exactly
+and says so loudly in the console. Capture at `/collect.html`, train at `/train.html`, then
+drop both output files in `public/model/`. Nothing below marked ⬜ exists yet.
 
 ---
 
@@ -110,19 +111,19 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 
 ## Stack
 
-Vite 8 · React 19 · `@mediapipe/tasks-vision` 1.0.1 · `@tensorflow/tfjs` 4 · oxlint
+Vite 8 · React 19 · TypeScript (app shell) · `@mediapipe/tasks-vision` 1.0.1 · `@tensorflow/tfjs` 4 · oxlint
 
 ## Layout
 
 ```
 src/lib/contract.js       shared constants — CLASSES, HAND_CONNECTIONS. Frozen.
 src/lib/recognizer.js     the interface between the two halves
-src/lib/mockRecognizer.js fake predictions that satisfy that interface
+src/lib/mockRecognizer.ts fake predictions that satisfy that interface
 src/lib/handTracker.js    MediaPipe wrapper
 src/lib/normalize.js      21 landmarks -> 63 invariant features
 src/lib/train.js          dataset merge + training
 src/pages/                collect and train tools (own Vite entries)
-src/App.jsx               the app
+src/App.tsx               the app
 data/                     captured training sets, committed
 public/model/             the trained model
 ```
