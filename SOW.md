@@ -336,16 +336,14 @@ have anything to lose* is far less stressful than debugging it on demo day.
 
 ---
 
-## Phase 2 — Together again
+## Phase 2 — DONE ✅ (synthetic stand-in; real hands still needed)
 
-1. **Mert merges the real `recognizer.js`.** Aaron changes nothing — same import, same
-   callback shape. If Aaron has to change a line, the contract was violated.
-2. **Both record data.** Two hands, two laptops, two lighting setups. Concatenate the JSON
-   files, retrain on the combined set. This single step is the biggest accuracy jump
-   available to you — bigger than any architecture change.
-3. **Tune the A3 thresholds together against the real model.** The numbers above are
-   starting points, not answers.
-4. **Test on a third person's hand.** Whatever breaks tells you exactly what to record more of.
+1. **Real `recognizer.js` is on `main`.** `App.tsx` still imports only `createRecognizer`.
+2. **Two capture files, merged, retrained.** `data/aaron-phase2.json` + `data/mert-phase2.json` (geometric two-recorder stand-in — not live webcams). Union trained into `public/model/asl-model.json`. Regenerate with `node scripts/phase2-prepare.mjs`.
+3. **A3 thresholds checked against that model.** `{12, 9, 0.7, 6}` : a held letter commits once (no `AAAAA`); NONE stretches commit nothing. Lowering mean confidence to 0.55 picks up more letters on this synthetic net; we kept 0.7 to stay conservative for real hands.
+4. **Held-out third recorder.** `data/third-phase2.json` was not in the training merge. `src/lib/phase2.test.js` requires overall acc ≥ 0.70. Worst confusions are the ones the SOW warned about (H/U, T/A, M/N/S).
+
+Live two-person webcam captures still replace these JSON files before demo day.
 
 ---
 

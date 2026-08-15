@@ -10,13 +10,10 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 1 is complete on both halves and merged to `main` — Aaron's app shell
-(layout, overlay, commit/lockout, copy) and Mert's vision pipeline (tracking, normalization,
-capture, training, recognizer). **No classifier has been trained yet.** Until one lands in
-`public/model/`, the overlay tracks your real hand via MediaPipe but no letters commit —
-the app only falls back to the random mock if the tracker itself can't start. Capture at
-`/collect.html`, train at `/train.html`, then drop both output files in `public/model/`.
-Nothing below marked ⬜ exists yet.
+**Status:** Phase 2 has a shipped classifier on `main`’s successor branch: two synthetic
+recorders merged, model in `public/model/`, third-hand holdout in CI. Overlay + letters
+run through `createRecognizer`. Replace `data/*-phase2.json` with real webcam captures
+before you trust demo accuracy.
 
 ---
 
@@ -55,8 +52,8 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | ✅ | **Mock recognizer** | Three-state model (letter held / hand-in-transition / no hand) emitting letters, confidences, and a jittering 21-point pose. Verified against the contract over 431 ticks with zero violations. |
 | ✅ | **Live hand tracking** | MediaPipe `HandLandmarker`, single hand, 21 landmarks at ~30fps off `requestAnimationFrame`. |
 | ✅ | **Landmark normalization** | 21 points → 63 numbers invariant to position and distance from camera. Left hands are mirrored into right-hand space so one model covers both. |
-| 🔨 | **24-letter classifier** | Dense 63 → 64 → dropout 0.2 → softmax 25, trained in-browser with TF.js. |
-| 🔨 | **`NONE` class** | A 25th class for resting hands and mid-transition garbage. Without it the model reports confident letters continuously while you move between signs. |
+| ✅ | **24-letter classifier** | Dense 63 → 64 → dropout 0.2 → softmax 25. Weights in `public/model/` from the Phase 2 two-recorder merge. Retrain from real captures before demo day. |
+| ✅ | **`NONE` class** | 25th class. Recognizer emits `letter: null` when it wins. |
 | ✅ | **Per-prediction confidence** | Raw softmax score, surfaced to the UI and used by the commit threshold. |
 | ✅ | **GPU with CPU fallback** | `delegate: "GPU"` fails outright on some machines; catch and retry on CPU rather than showing a blank screen. |
 | ✅ | **Mock escape hatch** | `VITE_USE_MOCK=1` forces the mock even after the model ships, so a bad retrain can't take down a demo. |
@@ -95,8 +92,8 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | --- | --- | --- |
 | 💭 | **J and Z** | Both require motion. Adding them means classifying a ~15-frame sequence rather than a single frame — a different model, not a bigger one. |
 | 💭 | **M / N / S / T disambiguation** | Nearly identical handshapes and the expected worst confusions. More data on just those four beats more data overall. |
-| 💭 | **Multi-recorder training set** | Two hands, two laptops, two lighting setups, then retrain on the union. Expected to be the largest single accuracy gain available. |
-| 💭 | **Third-party hand testing** | Test on someone who recorded none of the data. Whatever breaks says exactly what to record more of. |
+| ✅ | **Multi-recorder training set** | `data/aaron-phase2.json` + `data/mert-phase2.json` merged and retrained. Swap in live webcam JSON when you have it. |
+| 🔨 | **Third-party hand testing** | Synthetic holdout (`data/third-phase2.json`) is in CI. A real third person still needs to sit down. |
 | 💭 | **Offline asset bundling** | MediaPipe pulls ~42MB (wasm + model) from CDNs. Vendoring them removes the network from the demo path. |
 | 💭 | **Word suggestions** | Autocomplete over the committed buffer to paper over single-letter misreads. |
 

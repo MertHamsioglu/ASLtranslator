@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "lint": "oxlint",
     "test": "node --experimental-strip-types --test",
+    "phase2": "node scripts/phase2-prepare.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
