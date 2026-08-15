@@ -41,11 +41,62 @@ function fallbackToMock(reason, onPrediction) {
   return createMockRecognizer({ onPrediction });
 }
 
+/**
+ * No classifier yet, but MediaPipe is ready. Overlay tracks a real hand;
+ * letter stays null so Aaron's commit buffer does not type garbage.
+ */
+async function createLiveTrackerRecognizer({ onPrediction, reason }) {
+  console.warn(
+    `recognizer: no classifier (${reason}). Live landmarks only — letters will not commit until ${MODEL_URL} exists.`,
+  );
+  try {
+    const tracker = await createHandTracker({
+      onFrame({ landmarks }) {
+        onPrediction({
+          letter: null,
+          confidence: 0,
+          landmarks: landmarks ?? null,
+        });
+      },
+    });
+    return {
+      attach(videoEl) {
+        tracker.attach(videoEl);
+      },
+      stop() {
+        tracker.stop();
+      },
+    };
+  } catch (err) {
+    return fallbackToMock(
+      `no model, and hand tracker failed to start (${err.message})`,
+      onPrediction,
+    );
+  }
+}
+
 export async function createRecognizer({ onPrediction }) {
   // Demo-day insurance: a bad retrain can never take the app down.
   if (import.meta.env.VITE_USE_MOCK === "1") {
     console.info("recognizer: VITE_USE_MOCK=1, using the mock deliberately");
     return createMockRecognizer({ onPrediction });
+  }
+
+  // Skip the tfjs download when there is nothing to load. HEAD is not
+  // reliable on every static host, so a cheap GET is the existence check.
+  try {
+    const probe = await fetch(MODEL_URL, { cache: "no-store" });
+    if (!probe.ok) {
+      return createLiveTrackerRecognizer({
+        onPrediction,
+        reason: `${MODEL_URL} → ${probe.status}`,
+      });
+    }
+  } catch (err) {
+    return createLiveTrackerRecognizer({
+      onPrediction,
+      reason: `could not reach ${MODEL_URL} (${err.message})`,
+    });
   }
 
   // Dynamic import so tfjs (~875kB) is code-split out of the initial bundle.
@@ -56,8 +107,10 @@ export async function createRecognizer({ onPrediction }) {
   try {
     model = await tf.loadLayersModel(MODEL_URL);
   } catch (err) {
-    // Expected until M4 has produced a model. Not an error worth breaking on.
-    return fallbackToMock(`no model at ${MODEL_URL} (${err.message})`, onPrediction);
+    return createLiveTrackerRecognizer({
+      onPrediction,
+      reason: `tf.loadLayersModel failed (${err.message})`,
+    });
   }
 
   // Sanity-check the model against the contract rather than discovering a

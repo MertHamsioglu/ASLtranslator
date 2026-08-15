@@ -1,9 +1,10 @@
 /**
  * OWNER: Aaron — A2–A5
  *
- * Camera + mock recognizer + commit buffer. The recognizer effect always
- * starts, even when getUserMedia fails (contract rule 4), and always stop()s
- * in cleanup so StrictMode doesn't leave two intervals running.
+ * Camera + createRecognizer (Mert's file) + commit buffer. Same import as
+ * Phase 0; the body behind it is now live MediaPipe, with the mock only if
+ * the tracker itself cannot start. The recognizer effect always starts, even
+ * when getUserMedia fails (contract rule 4), and always stop()s in cleanup.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,6 +30,7 @@ export default function App() {
   });
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [pipeline, setPipeline] = useState<"starting" | "live" | "landmarks" | "mock">("starting");
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onPrediction = useCallback((next: Prediction) => {
@@ -53,10 +55,11 @@ export default function App() {
           stream.getTracks().forEach((track) => track.stop());
           return;
         }
-        if (!video) return;
-        video.srcObject = stream;
-        await video.play();
-        setCameraLive(true);
+        if (video) {
+          video.srcObject = stream;
+          await video.play();
+          setCameraLive(true);
+        }
       } catch (err) {
         if (cancelled) return;
         const error = err instanceof Error ? err : new Error(String(err));
@@ -64,12 +67,20 @@ export default function App() {
         setCameraLive(false);
       }
 
+      // Rule 4: the recognizer starts whether or not the camera came up.
       recognizer = await createRecognizer({ onPrediction });
       if (cancelled) {
         recognizer.stop();
         return;
       }
       if (stream && video) recognizer.attach(video);
+
+      try {
+        const probe = await fetch("/model/asl-model.json", { cache: "no-store" });
+        setPipeline(probe.ok ? "live" : "landmarks");
+      } catch {
+        setPipeline("landmarks");
+      }
     }
 
     start();
@@ -112,7 +123,7 @@ export default function App() {
               <div className="well-empty">
                 {cameraError ? (
                   <p className="banner" role="status">
-                    Camera unavailable. The recognizer is still running on the mock.
+                    Camera unavailable. The recognizer still starts.
                     {` ${cameraError}`}
                   </p>
                 ) : (
@@ -126,6 +137,13 @@ export default function App() {
               <p className="live-flag">
                 <span className={cameraLive ? "dot on" : "dot"} />
                 {cameraLive ? "Camera live" : "No camera"}
+                {pipeline === "live"
+                  ? " · classifier"
+                  : pipeline === "landmarks"
+                    ? " · tracker, no model yet"
+                    : pipeline === "mock"
+                      ? " · mock"
+                      : ""}
               </p>
               <ConfidenceMeter value={prediction.confidence} />
             </div>
@@ -172,7 +190,13 @@ export default function App() {
             </button>
           </div>
 
-          <p className="footnote">24 static letters. J and Z need motion.</p>
+          <p className="footnote">
+            {pipeline === "live"
+              ? "Live classifier. 24 static letters. J and Z need motion."
+              : pipeline === "landmarks"
+                ? "Overlay is Mert’s tracker. Letters wait until a model is in public/model/. Capture at /collect.html, train at /train.html."
+                : "24 static letters. J and Z need motion."}
+          </p>
         </section>
       </main>
     </div>

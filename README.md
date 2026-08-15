@@ -10,10 +10,10 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 1 UI and vision pipeline are both on `main`. **No model has been trained
-yet** — until one lands in `public/model/`, the app falls back to the mock and says so
-in the console. Capture at `/collect.html`, train at `/train.html`, then drop the files
-in `public/model/`.
+**Status:** Phase 1 is done on `main` (UI + vision pipeline). **No classifier
+weights yet** — the overlay uses live MediaPipe; letters will not commit until
+`public/model/asl-model.json` is there. Capture at `/collect.html`, train at
+`/train.html`.
 
 ---
 
