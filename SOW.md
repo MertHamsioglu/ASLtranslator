@@ -154,6 +154,9 @@ three entries, `npm run lint` is silent.
 
 ### Mert — vision pipeline
 
+> Full build guide with flowcharts, code, per-milestone acceptance tests, and a
+> troubleshooting table: **[PHASE1-MERT.md](PHASE1-MERT.md)**. What follows is the summary.
+
 **M1 · Landmarks flowing** — `src/lib/handTracker.js`
 
 `getUserMedia({ video: true })`, then:

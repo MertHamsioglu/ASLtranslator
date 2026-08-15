@@ -130,3 +130,9 @@ public/model/             the trained model
 ownership map, and the gotchas that will otherwise cost you an afternoon each. The short
 version: `createRecognizer` is the only interface between the two halves of this project,
 `contract.js` changes need both of us, and nobody edits the other person's files.
+
+Then the build guide for your half:
+
+- **[PHASE1-MERT.md](PHASE1-MERT.md)** — vision pipeline, M1 → M5: pipeline flowcharts,
+  MediaPipe setup, normalization, data capture technique, training, and a per-milestone
+  acceptance test for each.
