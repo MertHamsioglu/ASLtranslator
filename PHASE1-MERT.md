@@ -3,6 +3,15 @@
 The vision half, M1 → M5. Read [SOW.md](SOW.md) first for the contract; this is the
 how-to-actually-do-it companion.
 
+> **Status: all five milestones are implemented on the `mert` branch.** What's left is the
+> part no one can write for you — **recording the data (M3) and running the training (M4)**.
+> Everything else is built, and the tooling for those two steps is done and tested.
+>
+> The verification that exists today: 19 unit tests on `normalize`, 22 on the training
+> pipeline, and a browser run of `/train.html` end to end on synthetic data. What has
+> *not* been exercised is anything that needs a real camera — `handTracker` against live
+> MediaPipe, and `collect` capturing real frames. Those are your first two checks below.
+
 **Rule that makes this work:** you never touch `App.jsx`, `index.html`, `index.css`, or
 `components/`. Your tools live at `/collect.html` and `/train.html`, which are their own
 Vite entries. Aaron is building against the mock the entire time you're doing this, so
@@ -181,10 +190,18 @@ eventually exhaust GPU memory and make you think the model is at fault.
 4. flatten to [x0,y0,z0, x1,y1,z1, ...]           -> length 63
 ```
 
-**Order is not negotiable.** Mirroring after centering gives a different vector than
-mirroring before, because the wrist's own x moves under the mirror. Pick this order,
-record all your data with it, and never change it — if you change normalization after
-recording, every JSON file you have becomes garbage.
+**Correction to an earlier draft of this doc:** it claimed steps 1 and 2 don't commute.
+They do. Negation is linear, so `-(x - wristX)` is the same number whichever you apply
+first, and there's a unit test asserting exactly that. The implementation folds them into
+a single pass.
+
+**What genuinely must come last is step 3.** Scaling before centering would divide by a
+magnitude that still includes the hand's position in frame, so the vector would drift as
+you moved across the camera.
+
+And whatever you settle on, **never change it after recording**. Every JSON file in
+`data/` is encoded with the current scheme; changing normalization silently invalidates
+all of them.
 
 ### Why each step
 
@@ -346,6 +363,23 @@ await model.fit(tf.tensor2d(xs), tf.tensor2d(ys), {
 **4. Save.** `await model.save("downloads://asl-model")` gives you `asl-model.json` and
 `asl-model.weights.bin`. Move both into `public/model/`.
 
+### Two traps already handled in `train.js` — don't undo them
+
+**The data must be shuffled before `fit()`, not by it.** `validationSplit` carves off the
+*last* fraction of the arrays **before** shuffling, and `shuffle: true` only reshuffles the
+training portion each epoch. Captures are appended one class at a time, so handing `fit()`
+the raw merged arrays validates exclusively against the final few classes — which the model
+never trained on. Measured on synthetic data: **val_acc 0.0025 unshuffled vs 1.0000
+shuffled.** `trainModel()` calls `shuffleDataset()` first and returns the shuffled arrays
+so `holdOut()` can score the same rows.
+
+**Training freezes if you switch tabs.** tfjs's own `CustomCallback.maybeWait()` awaits
+`nextFrame()` (i.e. rAF) roughly every 125ms during `fit()`, and Chrome pauses rAF entirely
+in a hidden tab — so the hang is inside the library, not in our callback. `trainModel()`
+passes a visibility-aware `nextFrameFunc` in the callbacks object, which tfjs uses in place
+of rAF. `setTimeout` is not a substitute: hidden tabs clamp it to ~1/second, then ~1/minute
+after five minutes.
+
 ### Reading the numbers honestly
 
 **Watch `val_acc`, not `acc`.** If `val_acc` hits 0.99 on your first try, be suspicious
@@ -467,15 +501,19 @@ you ever see frame stutter, `await scores.data()` is the async version, but it c
 
 ## Milestone checklist
 
-- [ ] **M1** — 21 landmarks logging at 30fps, handedness verified against a deliberate
-      left/right test, no exceptions when the hand leaves frame, GPU→CPU fallback in place,
-      flat frame rate over 5 minutes
-- [ ] **M2** — 63 features, no `NaN`, stable across distance / position / hand
-- [ ] **M3** — collect page working, all 25 classes recorded with rotation, `NONE`
-      over-recorded, JSON committed to `data/`
-- [ ] **M4** — `val_acc` 0.90–0.96, per-class counts even, model in `public/model/`
-- [ ] **M5** — real letters in Aaron's UI with zero changes to his files, tensor count
-      flat, mock still reachable behind the env flag
+Code is written for all five. These are the checks only you can run:
+
+- [ ] **M1** — open `/collect.html` and confirm 21 landmarks at ~30fps, **handedness
+      verified against a deliberate left/right test**, no exceptions when the hand leaves
+      frame, GPU→CPU fallback reported in the status line, flat frame rate over 5 minutes
+- [ ] **M2** — hold one letter and walk toward/away from the camera; the live features
+      should barely move *(the invariance is unit-tested, but not yet against a real hand)*
+- [ ] **M3** — all 25 classes recorded **with rotation**, `NONE` over-recorded (400
+      frames), JSON committed to `data/`
+- [ ] **M4** — `val_acc` 0.90–0.96, per-class counts even, both model files in
+      `public/model/`
+- [ ] **M5** — real letters in Aaron's UI with zero changes to his files, `tf.memory()
+      .numTensors` flat over 5 minutes, mock still reachable via `VITE_USE_MOCK=1`
 
 ## Troubleshooting
 
@@ -490,3 +528,6 @@ you ever see frame stutter, `await scores.data()` is the async version, but it c
 | Tab slows then dies after a few minutes | missing `tf.tidy` in the predict path |
 | Skeleton drawn backwards in Aaron's UI | you mirrored landmarks before emitting; send them raw |
 | Two predictions per frame in dev | StrictMode double-mount; `stop()` isn't cleaning up |
+| Training freezes when you switch tabs | rAF is paused in hidden tabs; keep the `nextFrameFunc` override |
+| `val_acc` near zero while `acc` climbs | data wasn't shuffled before `fit()` — validation is all one class |
+| App shows random letters, console shows a red "falling back to the MOCK" | no model in `public/model/` yet, or it was trained against a different `CLASSES` list |

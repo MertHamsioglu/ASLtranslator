@@ -202,7 +202,9 @@ same callback shape as the contract so M5 is a thin layer, not a rewrite.
 2. Subtract landmark 0 (wrist) from all 21 points
 3. Divide every coordinate by the largest absolute value in the set
 
-Step 1 before step 2 — one model handles both hands instead of you collecting double the data.
+Step 1 is what lets one model handle both hands instead of you collecting double the data.
+Steps 1 and 2 commute (negation is linear), but **step 3 must come last** — scaling before
+centering divides by a magnitude that still includes the hand's position in frame.
 
 Test: hold one letter, walk toward and away from the camera. The 63 numbers should barely move.
 

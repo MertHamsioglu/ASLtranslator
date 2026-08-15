@@ -10,8 +10,10 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 1 app shell is on the `aaron` branch (layout, overlay, commit/lockout,
-copy). Vision/training work is still Mert's. The app runs on the mock recognizer.
+**Status:** Phase 1 UI and vision pipeline are both on `main`. **No model has been trained
+yet** — until one lands in `public/model/`, the app falls back to the mock and says so
+in the console. Capture at `/collect.html`, train at `/train.html`, then drop the files
+in `public/model/`.
 
 ---
 
@@ -47,13 +49,13 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | --- | --- | --- |
 | ✅ | **Frozen recognizer interface** | `createRecognizer({ onPrediction })` is the only thing crossing between the vision half and the UI half. Swapping the mock for the real model changes no UI code. |
 | ✅ | **Mock recognizer** | Three-state model (letter held / hand-in-transition / no hand) emitting letters, confidences, and a jittering 21-point pose. Verified against the contract over 431 ticks with zero violations. |
-| 🔨 | **Live hand tracking** | MediaPipe `HandLandmarker`, single hand, 21 landmarks at ~30fps off `requestAnimationFrame`. |
-| 🔨 | **Landmark normalization** | 21 points → 63 numbers invariant to position and distance from camera. Left hands are mirrored into right-hand space so one model covers both. |
-| ⬜ | **24-letter classifier** | Dense 63 → 64 → dropout 0.2 → softmax 25, trained in-browser with TF.js. |
-| ⬜ | **`NONE` class** | A 25th class for resting hands and mid-transition garbage. Without it the model reports confident letters continuously while you move between signs. |
-| ⬜ | **Per-prediction confidence** | Raw softmax score, surfaced to the UI and used by the commit threshold. |
-| ⬜ | **GPU with CPU fallback** | `delegate: "GPU"` fails outright on some machines; catch and retry on CPU rather than showing a blank screen. |
-| ⬜ | **Mock escape hatch** | `VITE_USE_MOCK=1` forces the mock even after the model ships, so a bad retrain can't take down a demo. |
+| ✅ | **Live hand tracking** | MediaPipe `HandLandmarker`, single hand, 21 landmarks at ~30fps off `requestAnimationFrame`. |
+| ✅ | **Landmark normalization** | 21 points → 63 numbers invariant to position and distance from camera. Left hands are mirrored into right-hand space so one model covers both. |
+| 🔨 | **24-letter classifier** | Dense 63 → 64 → dropout 0.2 → softmax 25, trained in-browser with TF.js. |
+| 🔨 | **`NONE` class** | A 25th class for resting hands and mid-transition garbage. Without it the model reports confident letters continuously while you move between signs. |
+| ✅ | **Per-prediction confidence** | Raw softmax score, surfaced to the UI and used by the commit threshold. |
+| ✅ | **GPU with CPU fallback** | `delegate: "GPU"` fails outright on some machines; catch and retry on CPU rather than showing a blank screen. |
+| ✅ | **Mock escape hatch** | `VITE_USE_MOCK=1` forces the mock even after the model ships, so a bad retrain can't take down a demo. |
 
 ### Data collection and training
 
@@ -61,11 +63,11 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | --- | --- | --- |
 | ✅ | **Dataset merge** | `mergeDatasets()` combines captures from multiple people into one training set, validating labels and feature length so a truncated capture run fails loudly instead of silently skewing the model. |
 | ✅ | **Versioned capture format** | `{ version, recordedBy, samples: [{ label, features }] }` — agreed up front so merging two laptops' data is one call. |
-| ⬜ | **Guided capture mode** | Pick a class, 3-second countdown, 200 frames. Prompts you to rotate and shift your hand while recording — the single highest-leverage thing for real-world accuracy. |
-| ⬜ | **JSON export** | Download a capture session, commit it to `data/`. Small enough that git is the right place for it. |
-| ⬜ | **In-browser training** | No Python, no separate toolchain. Load one or more capture files, fit, download the model into `public/model/`. |
-| ⬜ | **Per-class sample counts** | Shown before training starts. A class with 12 samples because a run got interrupted is invisible in the accuracy number and obvious in the counts. |
-| ⬜ | **Validation-accuracy tracking** | Plotted per epoch. `val_acc` of 0.99 means you captured 200 near-identical frames, not that the model is good. |
+| ✅ | **Guided capture mode** | Pick a class, 3-second countdown, 200 frames. Prompts you to rotate and shift your hand while recording — the single highest-leverage thing for real-world accuracy. |
+| ✅ | **JSON export** | Download a capture session, commit it to `data/`. Small enough that git is the right place for it. |
+| ✅ | **In-browser training** | No Python, no separate toolchain. Load one or more capture files, fit, download the model into `public/model/`. |
+| ✅ | **Per-class sample counts** | Shown before training starts. A class with 12 samples because a run got interrupted is invisible in the accuracy number and obvious in the counts. |
+| ✅ | **Validation-accuracy tracking** | Plotted per epoch. `val_acc` of 0.99 means you captured 200 near-identical frames, not that the model is good. |
 
 ### App and interface
 
@@ -106,19 +108,19 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 
 ## Stack
 
-Vite 8 · React 19 · `@mediapipe/tasks-vision` 1.0.1 · `@tensorflow/tfjs` 4 · oxlint
+Vite 8 · React 19 · TypeScript (app shell) · `@mediapipe/tasks-vision` 1.0.1 · `@tensorflow/tfjs` 4 · oxlint
 
 ## Layout
 
 ```
 src/lib/contract.js       shared constants — CLASSES, HAND_CONNECTIONS. Frozen.
 src/lib/recognizer.js     the interface between the two halves
-src/lib/mockRecognizer.js fake predictions that satisfy that interface
+src/lib/mockRecognizer.ts fake predictions that satisfy that interface
 src/lib/handTracker.js    MediaPipe wrapper
 src/lib/normalize.js      21 landmarks -> 63 invariant features
 src/lib/train.js          dataset merge + training
 src/pages/                collect and train tools (own Vite entries)
-src/App.jsx               the app
+src/App.tsx               the app
 data/                     captured training sets, committed
 public/model/             the trained model
 ```
