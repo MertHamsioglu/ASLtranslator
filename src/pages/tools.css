@@ -92,6 +92,26 @@ body {
   opacity: 0.4;
 }
 
+.phase0 table.counts button {
+  padding: 0 8px;
+  line-height: 1.6;
+}
+
+/* Runs alongside per-class counts — both are long, neither is worth scrolling
+   past to reach the other. */
+.phase0 .split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  align-items: start;
+  margin-top: 24px;
+}
+
+.phase0 h2 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
 /* ---------------------------------------------------------------- chart --
  * Palette slots 1 and 2 from the validated categorical set, stepped for each
  * surface. Both modes checked with the palette validator: lightness band,

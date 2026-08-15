@@ -10,7 +10,7 @@
  * holding still, and the model has memorized one exact hand position.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { CLASSES } from "../lib/contract";
 import {
   DEFAULT_EPOCHS,
@@ -24,7 +24,11 @@ import {
 import AccuracyChart from "../components-mert/AccuracyChart";
 
 export default function TrainPage() {
-  const [dataset, setDataset] = useState(null);
+  // Loaded files are kept individually rather than merged on arrival, so a bad
+  // capture can be excluded and the model retrained without reloading the rest.
+  // Toggling is non-destructive — an excluded file stays in the list, because
+  // "was it better with or without Aaron's set?" is a question you ask twice.
+  const [files, setFiles] = useState([]);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
   const [training, setTraining] = useState(false);
@@ -36,15 +40,57 @@ export default function TrainPage() {
     setConfusions(null);
     setHistory([]);
     try {
-      const files = await Promise.all(
-        [...fileList].map(async (f) => JSON.parse(await f.text())),
+      const loaded = await Promise.all(
+        [...fileList].map(async (f) => {
+          const parsed = JSON.parse(await f.text());
+          // Validate each file on its own so a bad one names itself, instead of
+          // failing the whole merge with no clue which file was at fault.
+          const { xs, counts } = mergeDatasets([parsed]);
+          return {
+            name: f.name,
+            recordedBy: parsed.recordedBy ?? "unknown",
+            samples: parsed.samples,
+            rows: xs.length,
+            counts,
+            enabled: true,
+          };
+        }),
       );
-      setDataset(mergeDatasets(files));
+      // Append rather than replace, so files can be added one at a time.
+      // Re-loading the same filename replaces that entry.
+      setFiles((prev) => [
+        ...prev.filter((p) => !loaded.some((l) => l.name === p.name)),
+        ...loaded,
+      ]);
     } catch (err) {
-      setDataset(null);
       setError(err.message);
     }
   }, []);
+
+  const toggleFile = useCallback((name) => {
+    setFiles((prev) =>
+      prev.map((f) => (f.name === name ? { ...f, enabled: !f.enabled } : f)),
+    );
+  }, []);
+
+  const removeFile = useCallback((name) => {
+    setFiles((prev) => prev.filter((f) => f.name !== name));
+  }, []);
+
+  const active = files.filter((f) => f.enabled);
+
+  // Recomputed whenever a file is toggled, so the counts table and the weak
+  // class warning always describe what would actually be trained.
+  const dataset = useMemo(() => {
+    if (active.length === 0) return null;
+    try {
+      return mergeDatasets(
+        active.map((f) => ({ version: 1, recordedBy: f.recordedBy, samples: f.samples })),
+      );
+    } catch {
+      return null;
+    }
+  }, [files]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = useCallback(async () => {
     if (!dataset) return;
@@ -98,6 +144,56 @@ export default function TrainPage() {
       </div>
 
       {error && <p className="meta error">{error}</p>}
+
+      {files.length > 0 && (
+        <>
+          <h2>Datasets</h2>
+          <p className="meta">
+            Untick a file to leave it out of the merge — counts and training
+            update immediately. Nothing is deleted from disk.
+          </p>
+          <table className="counts">
+            <thead>
+              <tr>
+                <th>use</th>
+                <th>file</th>
+                <th>recorded by</th>
+                <th>rows</th>
+                <th>classes</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((f) => (
+                <tr key={f.name} className={f.enabled ? "" : "missing"}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={f.enabled}
+                      disabled={training}
+                      onChange={() => toggleFile(f.name)}
+                      aria-label={`Include ${f.name}`}
+                    />
+                  </td>
+                  <td>{f.name}</td>
+                  <td>{f.recordedBy}</td>
+                  <td>{f.rows}</td>
+                  <td>{CLASSES.filter((c) => f.counts[c] > 0).length}/{CLASSES.length}</td>
+                  <td>
+                    <button onClick={() => removeFile(f.name)} disabled={training}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {files.length > 0 && active.length === 0 && (
+        <p className="meta error">Every dataset is excluded — nothing to train on.</p>
+      )}
 
       {dataset && (
         <>
@@ -162,7 +258,7 @@ export default function TrainPage() {
         </>
       )}
 
-      {dataset === null && !error && (
+      {files.length === 0 && !error && (
         <p className="meta">Load one or more data/*.json captures to begin.</p>
       )}
     </main>
