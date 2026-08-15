@@ -82,10 +82,20 @@ export async function createRecognizer({ onPrediction }) {
     return createMockRecognizer({ onPrediction });
   }
 
-  // Skip the tfjs download when there is nothing to load. HEAD is not
-  // reliable on every static host, so a cheap GET is the existence check.
+  // Skip the ~1MB tfjs download when there is nothing to load. HEAD is not
+  // reliable on every static host, so a GET is the existence check.
+  //
+  // Deliberately NOT `cache: "no-store"`: once a model exists this probe and
+  // tf.loadLayersModel fetch the same file, and no-store guarantees the second
+  // one is a fresh download rather than a cache hit. Letting it cache makes the
+  // probe free in the case that will soon be the normal one.
+  //
+  // Caveat: this only detects absence on a real static host. Vite's dev server
+  // answers a missing /model/asl-model.json with the SPA fallback — 200 and
+  // HTML — so locally the probe passes, tfjs loads, and loadLayersModel throws
+  // instead. Same end state, just the long way round.
   try {
-    const probe = await fetch(MODEL_URL, { cache: "no-store" });
+    const probe = await fetch(MODEL_URL);
     if (!probe.ok) {
       return createLiveTrackerRecognizer({
         onPrediction,

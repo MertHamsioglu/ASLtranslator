@@ -10,10 +10,13 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 1 is done on `main` (UI + vision pipeline). **No classifier
-weights yet** — the overlay uses live MediaPipe; letters will not commit until
-`public/model/asl-model.json` is there. Capture at `/collect.html`, train at
-`/train.html`.
+**Status:** Phase 1 is complete on both halves and merged to `main` — Aaron's app shell
+(layout, overlay, commit/lockout, copy) and Mert's vision pipeline (tracking, normalization,
+capture, training, recognizer). **No classifier has been trained yet.** Until one lands in
+`public/model/`, the overlay tracks your real hand via MediaPipe but no letters commit —
+the app only falls back to the random mock if the tracker itself can't start. Capture at
+`/collect.html`, train at `/train.html`, then drop both output files in `public/model/`.
+Nothing below marked ⬜ exists yet.
 
 ---
 
@@ -33,7 +36,8 @@ Deny the camera prompt and the app still runs — you get the mock plus an error
 rather than a dead page. That's deliberate; see contract rule 4 in [SOW.md](SOW.md).
 
 ```bash
-npm run build   # all three entries
+npm test        # 34 tests — commit logic, normalization invariance, training pipeline
+npm run build   # tsc --noEmit, then all three entries
 npm run lint    # oxlint
 ```
 

@@ -7,8 +7,9 @@ how-to-actually-do-it companion.
 > part no one can write for you — **recording the data (M3) and running the training (M4)**.
 > Everything else is built, and the tooling for those two steps is done and tested.
 >
-> The verification that exists today: 19 unit tests on `normalize`, 22 on the training
-> pipeline, and a browser run of `/train.html` end to end on synthetic data. What has
+> The verification that exists today: `npm test` runs 34 tests in ~3s — Aaron's commit
+> logic, `normalize`'s invariance and guards, and the training pipeline including the
+> validationSplit trap — plus a browser run of `/train.html` end to end on synthetic data. What has
 > *not* been exercised is anything that needs a real camera — `handTracker` against live
 > MediaPipe, and `collect` capturing real frames. Those are your first two checks below.
 
