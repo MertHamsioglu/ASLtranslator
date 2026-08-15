@@ -5,6 +5,8 @@
  * keep every threshold in COMMIT_CONFIG so that pass is one file.
  */
 
+import type { Prediction } from "../types";
+
 export const COMMIT_CONFIG = Object.freeze({
   windowSize: 12,
   minAgreement: 9,
@@ -12,9 +14,20 @@ export const COMMIT_CONFIG = Object.freeze({
   lockoutFrames: 6,
 });
 
-export function createCommitter(config = COMMIT_CONFIG) {
-  const buffer = [];
-  let lockedLetter = null;
+export type CommitConfig = typeof COMMIT_CONFIG;
+
+type Frame = {
+  letter: string | null;
+  confidence: number;
+};
+
+export type Committer = {
+  ingest: (prediction: Prediction) => string | null;
+};
+
+export function createCommitter(config: CommitConfig = COMMIT_CONFIG): Committer {
+  const buffer: Frame[] = [];
+  let lockedLetter: string | null = null;
   let unlockStreak = 0;
 
   return {
@@ -38,13 +51,13 @@ export function createCommitter(config = COMMIT_CONFIG) {
       if (buffer.length > config.windowSize) buffer.shift();
       if (buffer.length < config.windowSize) return null;
 
-      const counts = new Map();
+      const counts = new Map<string, number>();
       for (const frame of buffer) {
         if (frame.letter == null) continue;
         counts.set(frame.letter, (counts.get(frame.letter) ?? 0) + 1);
       }
 
-      let winner = null;
+      let winner: string | null = null;
       let votes = 0;
       for (const [candidate, n] of counts) {
         if (n > votes) {
@@ -68,7 +81,7 @@ export function createCommitter(config = COMMIT_CONFIG) {
   };
 }
 
-function clamp01(n) {
+function clamp01(n: number) {
   if (Number.isNaN(n)) return 0;
   return Math.min(1, Math.max(0, n));
 }

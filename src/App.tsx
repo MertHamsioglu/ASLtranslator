@@ -8,38 +8,39 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRecognizer } from "./lib/recognizer";
-import { createCommitter } from "./components/commit";
+import { createCommitter, type Committer } from "./components/commit";
 import HandOverlay from "./components/HandOverlay";
 import ConfidenceMeter from "./components/ConfidenceMeter";
+import type { Prediction, Recognizer } from "./types";
 
 const COPY_RESET_MS = 1500;
 
 export default function App() {
-  const videoRef = useRef(null);
-  const committerRef = useRef(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const committerRef = useRef<Committer | null>(null);
   if (committerRef.current == null) committerRef.current = createCommitter();
 
   const [cameraLive, setCameraLive] = useState(false);
-  const [cameraError, setCameraError] = useState(null);
-  const [prediction, setPrediction] = useState({
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [prediction, setPrediction] = useState<Prediction>({
     letter: null,
     confidence: 0,
     landmarks: null,
   });
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
-  const copiedTimer = useRef(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const onPrediction = useCallback((next) => {
+  const onPrediction = useCallback((next: Prediction) => {
     setPrediction(next);
-    const committed = committerRef.current.ingest(next);
+    const committed = committerRef.current?.ingest(next);
     if (committed) setText((prev) => prev + committed);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    let recognizer = null;
-    let stream = null;
+    let recognizer: Recognizer | null = null;
+    let stream: MediaStream | null = null;
     const video = videoRef.current;
 
     async function start() {
@@ -52,12 +53,14 @@ export default function App() {
           stream.getTracks().forEach((track) => track.stop());
           return;
         }
+        if (!video) return;
         video.srcObject = stream;
         await video.play();
         setCameraLive(true);
       } catch (err) {
         if (cancelled) return;
-        setCameraError(`${err.name}: ${err.message}`);
+        const error = err instanceof Error ? err : new Error(String(err));
+        setCameraError(`${error.name}: ${error.message}`);
         setCameraLive(false);
       }
 
@@ -66,7 +69,7 @@ export default function App() {
         recognizer.stop();
         return;
       }
-      if (stream) recognizer.attach(video);
+      if (stream && video) recognizer.attach(video);
     }
 
     start();
@@ -79,14 +82,16 @@ export default function App() {
     };
   }, [onPrediction]);
 
-  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+  useEffect(() => () => {
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+  }, []);
 
   async function copyText() {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      clearTimeout(copiedTimer.current);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
       copiedTimer.current = setTimeout(() => setCopied(false), COPY_RESET_MS);
     } catch {
       setCopied(false);

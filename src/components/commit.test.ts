@@ -1,11 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { COMMIT_CONFIG, createCommitter } from "./commit.js";
+import { COMMIT_CONFIG, createCommitter, type Committer } from "./commit.ts";
 
-function fill(committer, letter, n, confidence = 0.9) {
-  const out = [];
+function fill(committer: Committer, letter: string | null, n: number, confidence = 0.9) {
+  const out: Array<string | null> = [];
   for (let i = 0; i < n; i++) {
-    out.push(committer.ingest({ letter, confidence }));
+    out.push(committer.ingest({ letter, confidence, landmarks: null }));
   }
   return out;
 }
@@ -20,9 +20,9 @@ describe("createCommitter", () => {
 
   it("commits when nine of twelve frames agree above 0.7 mean confidence", () => {
     const c = createCommitter();
-    const emitted = [];
-    for (let i = 0; i < 9; i++) emitted.push(c.ingest({ letter: "A", confidence: 0.85 }));
-    for (let i = 0; i < 3; i++) emitted.push(c.ingest({ letter: null, confidence: 0.2 }));
+    const emitted: Array<string | null> = [];
+    for (let i = 0; i < 9; i++) emitted.push(c.ingest({ letter: "A", confidence: 0.85, landmarks: null }));
+    for (let i = 0; i < 3; i++) emitted.push(c.ingest({ letter: null, confidence: 0.2, landmarks: null }));
     assert.equal(emitted.filter(Boolean).length, 1);
     assert.equal(emitted.find(Boolean), "A");
   });

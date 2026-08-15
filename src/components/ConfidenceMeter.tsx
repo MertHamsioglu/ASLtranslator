@@ -1,4 +1,8 @@
-export default function ConfidenceMeter({ value }) {
+type ConfidenceMeterProps = {
+  value: number;
+};
+
+export default function ConfidenceMeter({ value }: ConfidenceMeterProps) {
   const pct = Math.round(Math.min(1, Math.max(0, value)) * 100);
   return (
     <div
