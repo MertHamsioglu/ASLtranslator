@@ -10,9 +10,8 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 0 complete. The app runs end to end on a mock recognizer that satisfies
-the real interface exactly, so the UI and the vision pipeline are being built in parallel
-against the same contract. Nothing below marked ⬜ exists yet.
+**Status:** Phase 1 app shell is on the `aaron` branch (layout, overlay, commit/lockout,
+copy). Vision/training work is still Mert's. The app runs on the mock recognizer.
 
 ---
 
@@ -73,16 +72,16 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | | Feature | Notes |
 | --- | --- | --- |
 | ✅ | **Graceful camera failure** | No webcam, denied permission, or a headless browser degrades to a banner. The recognizer still runs. |
-| ⬜ | **Mirrored video preview** | CSS-flipped so it behaves like a mirror. Landmark coordinates stay unmirrored — the overlay flips `x` itself. |
-| ⬜ | **Live letter readout** | Large, immediate, showing the current frame's best guess before anything is committed. |
-| ⬜ | **Confidence meter** | So a hesitant read is visibly different from a certain one. |
-| ⬜ | **Hand skeleton overlay** | Drawn from the 21-point topology in `contract.js`. Keeps drawing during transitions, when there's no letter to show. |
-| ⬜ | **Debounced letter commit** | Ring buffer of the last 12 predictions; commit when ≥9 agree and mean confidence clears 0.7. |
-| ⬜ | **Repeat lockout** | After committing, that letter is locked out until 6+ frames of a different letter or no hand. Without it, holding your hand still types `AAAAAAAA`. |
-| ⬜ | **Text buffer** | Accumulates committed letters into words. |
-| ⬜ | **Copy · Space · Backspace · Clear** | Copy swaps to "Copied" for 1.5s and reverts. |
-| ⬜ | **Visual identity from the topology** | Hand landmark skeletons are genuinely good line art. The design is built out of that rather than decorated on top of a generic shell. |
-| ⬜ | **HTTPS deployment** | Vercel or Netlify, wired up while it's still the mock — camera permissions behave differently on a real domain and that's not a demo-day discovery. |
+| ✅ | **Mirrored video preview** | CSS-flipped so it behaves like a mirror. Landmark coordinates stay unmirrored — the overlay flips `x` itself. |
+| ✅ | **Live letter readout** | Large, immediate, showing the current frame's best guess before anything is committed. |
+| ✅ | **Confidence meter** | So a hesitant read is visibly different from a certain one. |
+| ✅ | **Hand skeleton overlay** | Drawn from the 21-point topology in `contract.js`. Keeps drawing during transitions, when there's no letter to show. |
+| ✅ | **Debounced letter commit** | Ring buffer of the last 12 predictions; commit when ≥9 agree and mean confidence clears 0.7. |
+| ✅ | **Repeat lockout** | After committing, that letter is locked out until 6+ frames of a different letter or no hand. Without it, holding your hand still types `AAAAAAAA`. |
+| ✅ | **Text buffer** | Accumulates committed letters into words. |
+| ✅ | **Copy · Space · Backspace · Clear** | Copy swaps to "Copied" for 1.5s and reverts. |
+| ✅ | **Visual identity from the topology** | Hand landmark skeletons are genuinely good line art. The design is built out of that rather than decorated on top of a generic shell. |
+| 🔨 | **HTTPS deployment** | `vercel.json` and `netlify.toml` are in the repo. Connect the GitHub repo to Vercel or Netlify (camera permissions are per-origin). |
 
 ### Later
 
