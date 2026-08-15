@@ -5,7 +5,7 @@
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "./index.css";
+import "./pages/tools.css";
 import CollectPage from "./pages/CollectPage";
 
 createRoot(document.getElementById("root")).render(

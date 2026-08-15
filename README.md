@@ -10,9 +10,11 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 0 complete. The app runs end to end on a mock recognizer that satisfies
-the real interface exactly, so the UI and the vision pipeline are being built in parallel
-against the same contract. Nothing below marked ⬜ exists yet.
+**Status:** Phase 0 complete; the vision pipeline (M1–M5) is implemented on the `mert`
+branch. **No model has been trained yet** — until one lands in `public/model/`, the app
+falls back to a mock recognizer that satisfies the real interface exactly and says so
+loudly in the console. The UI half is being built against that same interface in parallel.
+Nothing below marked ⬜ exists yet.
 
 ---
 
@@ -48,13 +50,13 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | --- | --- | --- |
 | ✅ | **Frozen recognizer interface** | `createRecognizer({ onPrediction })` is the only thing crossing between the vision half and the UI half. Swapping the mock for the real model changes no UI code. |
 | ✅ | **Mock recognizer** | Three-state model (letter held / hand-in-transition / no hand) emitting letters, confidences, and a jittering 21-point pose. Verified against the contract over 431 ticks with zero violations. |
-| 🔨 | **Live hand tracking** | MediaPipe `HandLandmarker`, single hand, 21 landmarks at ~30fps off `requestAnimationFrame`. |
-| 🔨 | **Landmark normalization** | 21 points → 63 numbers invariant to position and distance from camera. Left hands are mirrored into right-hand space so one model covers both. |
-| ⬜ | **24-letter classifier** | Dense 63 → 64 → dropout 0.2 → softmax 25, trained in-browser with TF.js. |
-| ⬜ | **`NONE` class** | A 25th class for resting hands and mid-transition garbage. Without it the model reports confident letters continuously while you move between signs. |
-| ⬜ | **Per-prediction confidence** | Raw softmax score, surfaced to the UI and used by the commit threshold. |
-| ⬜ | **GPU with CPU fallback** | `delegate: "GPU"` fails outright on some machines; catch and retry on CPU rather than showing a blank screen. |
-| ⬜ | **Mock escape hatch** | `VITE_USE_MOCK=1` forces the mock even after the model ships, so a bad retrain can't take down a demo. |
+| ✅ | **Live hand tracking** | MediaPipe `HandLandmarker`, single hand, 21 landmarks at ~30fps off `requestAnimationFrame`. |
+| ✅ | **Landmark normalization** | 21 points → 63 numbers invariant to position and distance from camera. Left hands are mirrored into right-hand space so one model covers both. |
+| 🔨 | **24-letter classifier** | Dense 63 → 64 → dropout 0.2 → softmax 25, trained in-browser with TF.js. |
+| 🔨 | **`NONE` class** | A 25th class for resting hands and mid-transition garbage. Without it the model reports confident letters continuously while you move between signs. |
+| ✅ | **Per-prediction confidence** | Raw softmax score, surfaced to the UI and used by the commit threshold. |
+| ✅ | **GPU with CPU fallback** | `delegate: "GPU"` fails outright on some machines; catch and retry on CPU rather than showing a blank screen. |
+| ✅ | **Mock escape hatch** | `VITE_USE_MOCK=1` forces the mock even after the model ships, so a bad retrain can't take down a demo. |
 
 ### Data collection and training
 
@@ -62,11 +64,11 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | --- | --- | --- |
 | ✅ | **Dataset merge** | `mergeDatasets()` combines captures from multiple people into one training set, validating labels and feature length so a truncated capture run fails loudly instead of silently skewing the model. |
 | ✅ | **Versioned capture format** | `{ version, recordedBy, samples: [{ label, features }] }` — agreed up front so merging two laptops' data is one call. |
-| ⬜ | **Guided capture mode** | Pick a class, 3-second countdown, 200 frames. Prompts you to rotate and shift your hand while recording — the single highest-leverage thing for real-world accuracy. |
-| ⬜ | **JSON export** | Download a capture session, commit it to `data/`. Small enough that git is the right place for it. |
-| ⬜ | **In-browser training** | No Python, no separate toolchain. Load one or more capture files, fit, download the model into `public/model/`. |
-| ⬜ | **Per-class sample counts** | Shown before training starts. A class with 12 samples because a run got interrupted is invisible in the accuracy number and obvious in the counts. |
-| ⬜ | **Validation-accuracy tracking** | Plotted per epoch. `val_acc` of 0.99 means you captured 200 near-identical frames, not that the model is good. |
+| ✅ | **Guided capture mode** | Pick a class, 3-second countdown, 200 frames. Prompts you to rotate and shift your hand while recording — the single highest-leverage thing for real-world accuracy. |
+| ✅ | **JSON export** | Download a capture session, commit it to `data/`. Small enough that git is the right place for it. |
+| ✅ | **In-browser training** | No Python, no separate toolchain. Load one or more capture files, fit, download the model into `public/model/`. |
+| ✅ | **Per-class sample counts** | Shown before training starts. A class with 12 samples because a run got interrupted is invisible in the accuracy number and obvious in the counts. |
+| ✅ | **Validation-accuracy tracking** | Plotted per epoch. `val_acc` of 0.99 means you captured 200 near-identical frames, not that the model is good. |
 
 ### App and interface
 
