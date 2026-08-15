@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "lint": "oxlint",
-    "test": "node --experimental-strip-types --test src/components/commit.test.ts",
+    "test": "node --experimental-strip-types --test",
     "preview": "vite preview"
   },
   "dependencies": {

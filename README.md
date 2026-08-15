@@ -10,10 +10,12 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 1 UI and vision pipeline are both on `main`. **No model has been trained
-yet** — until one lands in `public/model/`, the app falls back to the mock and says so
-in the console. Capture at `/collect.html`, train at `/train.html`, then drop the files
-in `public/model/`.
+**Status:** Phase 1 is complete on both halves and merged to `main` — Aaron's app shell
+(layout, overlay, commit/lockout, copy) and Mert's vision pipeline (tracking, normalization,
+capture, training, recognizer). **No model has been trained yet** — until one lands in
+`public/model/`, the app runs on a mock recognizer that satisfies the real interface exactly
+and says so loudly in the console. Capture at `/collect.html`, train at `/train.html`, then
+drop both output files in `public/model/`. Nothing below marked ⬜ exists yet.
 
 ---
 
@@ -33,7 +35,8 @@ Deny the camera prompt and the app still runs — you get the mock plus an error
 rather than a dead page. That's deliberate; see contract rule 4 in [SOW.md](SOW.md).
 
 ```bash
-npm run build   # all three entries
+npm test        # 34 tests — commit logic, normalization invariance, training pipeline
+npm run build   # tsc --noEmit, then all three entries
 npm run lint    # oxlint
 ```
 
