@@ -12,10 +12,11 @@ no upload — video never leaves the machine.
 
 **Status:** Phase 1 is complete on both halves and merged to `main` — Aaron's app shell
 (layout, overlay, commit/lockout, copy) and Mert's vision pipeline (tracking, normalization,
-capture, training, recognizer). **No model has been trained yet** — until one lands in
-`public/model/`, the app runs on a mock recognizer that satisfies the real interface exactly
-and says so loudly in the console. Capture at `/collect.html`, train at `/train.html`, then
-drop both output files in `public/model/`. Nothing below marked ⬜ exists yet.
+capture, training, recognizer). **No classifier has been trained yet.** Until one lands in
+`public/model/`, the overlay tracks your real hand via MediaPipe but no letters commit —
+the app only falls back to the random mock if the tracker itself can't start. Capture at
+`/collect.html`, train at `/train.html`, then drop both output files in `public/model/`.
+Nothing below marked ⬜ exists yet.
 
 ---
 

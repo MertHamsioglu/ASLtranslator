@@ -150,7 +150,25 @@ three entries, `npm run lint` is silent.
 
 ---
 
-## Phase 1 — Parallel. No coordination required.
+## Phase 1 — DONE ✅
+
+Both halves are on `main`. Record of what shipped, not a to-do.
+
+| ID | What | Status |
+| --- | --- | --- |
+| M1 | `handTracker.js` — MediaPipe, GPU→CPU, rAF + strictly increasing timestamps | ✅ |
+| M2 | `normalize.js` — 21 points → 63, left-hand mirror, NaN guard | ✅ |
+| M3 | `/collect.html` — countdown, 200 frames (400 for NONE), versioned JSON | ✅ |
+| M4 | `/train.html` — merge, shuffle, fit, confusion matrix | ✅ code; ⬜ no weights in `public/model/` yet |
+| M5 | `recognizer.js` — tracker → normalize → predict, `NONE` → `null`, `VITE_USE_MOCK=1` | ✅ |
+| A1 | Mock recognizer (Phase 0) | ✅ |
+| A2 | Layout: mirrored video, live letter, confidence, buffer, Copy/Space/Backspace/Clear | ✅ |
+| A3 | Commit config `{12, 9, 0.7, 6}` + lockout | ✅ |
+| A4 | Clipboard copy, “Copied” for 1.5s | ✅ |
+| A5 | Skeleton overlay, identity from `HAND_CONNECTIONS` | ✅ |
+| A6 | `vercel.json` / `netlify.toml` | 🔨 connect the GitHub repo to a host |
+
+The UI already imported only `createRecognizer`. With no model file it now still attaches Mert’s tracker so the overlay follows a real hand; letters stay `null` until `public/model/asl-model.json` exists. The mock is the last resort (tracker failed, or `VITE_USE_MOCK=1`).
 
 ### Mert — vision pipeline
 
