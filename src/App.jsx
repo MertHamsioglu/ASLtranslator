@@ -1,28 +1,40 @@
 /**
- * OWNER: Aaron — A2 onwards
+ * OWNER: Aaron — A2–A5
  *
- * This is Phase 0 scaffolding, not a design. It exists to prove the whole loop
- * works end to end on both laptops: camera -> recognizer -> letters on screen.
- * Delete all of it as you build the real UI (A2-A5). Nothing here is precious.
- *
- * The one thing worth keeping the shape of is the effect below: create the
- * recognizer once, always stop it in cleanup. React StrictMode mounts every
- * effect twice in dev, so a recognizer that isn't cleaned up means two
- * intervals racing and a camera light that won't turn off.
+ * Camera + mock recognizer + commit buffer. The recognizer effect always
+ * starts, even when getUserMedia fails (contract rule 4), and always stop()s
+ * in cleanup so StrictMode doesn't leave two intervals running.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRecognizer } from "./lib/recognizer";
+import { createCommitter } from "./components/commit";
+import HandOverlay from "./components/HandOverlay";
+import ConfidenceMeter from "./components/ConfidenceMeter";
+
+const COPY_RESET_MS = 1500;
 
 export default function App() {
   const videoRef = useRef(null);
-  const [status, setStatus] = useState("starting");
+  const committerRef = useRef(null);
+  if (committerRef.current == null) committerRef.current = createCommitter();
+
+  const [cameraLive, setCameraLive] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [prediction, setPrediction] = useState({
     letter: null,
     confidence: 0,
     landmarks: null,
   });
+  const [text, setText] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef(null);
+
+  const onPrediction = useCallback((next) => {
+    setPrediction(next);
+    const committed = committerRef.current.ingest(next);
+    if (committed) setText((prev) => prev + committed);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,33 +43,30 @@ export default function App() {
     const video = videoRef.current;
 
     async function start() {
-      // Camera first, but a failure here must NOT stop the recognizer. Aaron
-      // needs the mock emitting on a locked-down machine, in a headless
-      // browser, or when he simply denies the prompt. A camera error is a
-      // missing video feed, not a dead app.
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480 },
+          video: { width: 640, height: 480, facingMode: "user" },
           audio: false,
         });
-        if (cancelled) return;
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         video.srcObject = stream;
         await video.play();
+        setCameraLive(true);
       } catch (err) {
         if (cancelled) return;
-        setCameraError(`${err.name} — ${err.message}`);
+        setCameraError(`${err.name}: ${err.message}`);
+        setCameraLive(false);
       }
 
-      recognizer = await createRecognizer({ onPrediction: setPrediction });
+      recognizer = await createRecognizer({ onPrediction });
       if (cancelled) {
         recognizer.stop();
         return;
       }
-
-      // attach() gets the video element only if we actually have a feed.
-      // The real recognizer produces nothing without one; the mock ignores it.
       if (stream) recognizer.attach(video);
-      setStatus(stream ? "running" : "running (no camera)");
     }
 
     start();
@@ -68,23 +77,99 @@ export default function App() {
       stream?.getTracks().forEach((track) => track.stop());
       if (video) video.srcObject = null;
     };
-  }, []);
+  }, [onPrediction]);
 
-  const { letter, confidence, landmarks } = prediction;
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+
+  async function copyText() {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), COPY_RESET_MS);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  const liveLetter = prediction.letter ?? "";
 
   return (
-    <main className="phase0">
-      <h1>ASL Fingerspelling Recognizer</h1>
-      <p className="meta">Phase 0 — mock recognizer. Status: {status}</p>
+    <div className="app">
+      <main className="shell">
+        <section className="stage" aria-label="Camera">
+          <p className="brand">Fingerspell</p>
+          <div className="well">
+            <video ref={videoRef} playsInline muted />
+            <HandOverlay landmarks={prediction.landmarks} />
+            {!cameraLive && (
+              <div className="well-empty">
+                {cameraError ? (
+                  <p className="banner" role="status">
+                    Camera unavailable. The recognizer is still running on the mock.
+                    {` ${cameraError}`}
+                  </p>
+                ) : (
+                  <p className="banner" role="status">
+                    Starting camera…
+                  </p>
+                )}
+              </div>
+            )}
+            <div className="stage-chrome">
+              <p className="live-flag">
+                <span className={cameraLive ? "dot on" : "dot"} />
+                {cameraLive ? "Camera live" : "No camera"}
+              </p>
+              <ConfidenceMeter value={prediction.confidence} />
+            </div>
+          </div>
+        </section>
 
-      {cameraError && <p className="meta error">camera unavailable: {cameraError}</p>}
-      <video ref={videoRef} playsInline muted />
+        <section className="side" aria-label="Readout">
+          <p className="letter" aria-live="polite">
+            {liveLetter || "·"}
+          </p>
+          <p className="reading">
+            {prediction.letter
+              ? `reading · ${prediction.confidence.toFixed(2)}`
+              : prediction.landmarks
+                ? "transition"
+                : "no hand"}
+          </p>
 
-      <div className="letter">{letter ?? "·"}</div>
-      <p className="meta">
-        confidence {confidence.toFixed(2)} · landmarks{" "}
-        {landmarks ? `${landmarks.length} pts` : "none"}
-      </p>
-    </main>
+          <p className="buffer-label" id="committed-label">
+            Committed text
+          </p>
+          <div className="buffer" role="status" aria-labelledby="committed-label">
+            {text}
+            <span className="caret" aria-hidden="true" />
+          </div>
+
+          <div className="actions">
+            <button type="button" className="btn primary" onClick={copyText} disabled={!text}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+            <button type="button" className="btn" onClick={() => setText((t) => `${t} `)}>
+              Space
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setText((t) => t.slice(0, -1))}
+              disabled={!text}
+            >
+              Backspace
+            </button>
+            <button type="button" className="btn" onClick={() => setText("")} disabled={!text}>
+              Clear
+            </button>
+          </div>
+
+          <p className="footnote">24 static letters. J and Z need motion.</p>
+        </section>
+      </main>
+    </div>
   );
 }
