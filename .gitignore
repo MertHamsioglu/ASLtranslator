@@ -50,3 +50,6 @@ pnpm-debug.log*
 data/raw/
 *.webm
 *.mov
+
+__pycache__/
+*.pyc
