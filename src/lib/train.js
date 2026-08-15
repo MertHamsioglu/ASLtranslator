@@ -8,7 +8,7 @@
  */
 
 import * as tf from "@tensorflow/tfjs";
-import { CLASSES, NUM_FEATURES } from "./contract";
+import { CLASSES, NUM_FEATURES } from "./contract.js";
 
 export const DEFAULT_EPOCHS = 60;
 export const VALIDATION_SPLIT = 0.2;

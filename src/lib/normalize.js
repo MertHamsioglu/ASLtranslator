@@ -33,7 +33,7 @@
  * 63 numbers should barely move. If they scale with distance, step 3 is broken.
  */
 
-import { NUM_FEATURES, NUM_LANDMARKS } from "./contract";
+import { NUM_FEATURES, NUM_LANDMARKS } from "./contract.js";
 
 /**
  * @param {Array<{x:number, y:number, z?:number}>} landmarks - 21 raw MediaPipe points

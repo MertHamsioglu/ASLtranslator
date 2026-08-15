@@ -34,7 +34,8 @@ Deny the camera prompt and the app still runs — you get the mock plus an error
 rather than a dead page. That's deliberate; see contract rule 4 in [SOW.md](SOW.md).
 
 ```bash
-npm run build   # all three entries
+npm test        # 34 tests — commit logic, normalization invariance, training pipeline
+npm run build   # tsc --noEmit, then all three entries
 npm run lint    # oxlint
 ```
 
