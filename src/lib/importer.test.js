@@ -4,6 +4,8 @@ import { CLASSES, NONE_LABEL, NUM_FEATURES, NUM_LANDMARKS } from "./contract.js"
 import {
   capPerClass,
   labelFromPath,
+  naturalCompare,
+  spreadPick,
   looksPreNormalized,
   parseLandmarkCsv,
   synthesizeNone,
@@ -207,5 +209,46 @@ describe("tally", () => {
     assert.equal(Object.keys(counts).length, CLASSES.length);
     assert.equal(counts.A, 1);
     assert.equal(counts.B, 0);
+  });
+});
+
+describe("naturalCompare", () => {
+  it("orders A9 before A10, unlike a plain string sort", () => {
+    const files = ["A10.jpg", "A9.jpg", "A100.jpg", "A1.jpg"];
+    assert.deepEqual(files.slice().sort(naturalCompare), ["A1.jpg", "A9.jpg", "A10.jpg", "A100.jpg"]);
+    // The plain sort is what makes "spread across the session" meaningless.
+    assert.notDeepEqual(files.slice().sort(), files.slice().sort(naturalCompare));
+  });
+});
+
+describe("spreadPick", () => {
+  const pool = Array.from({ length: 3000 }, (_, i) => i);
+
+  it("returns everything when the pool is already small enough", () => {
+    assert.deepEqual(spreadPick([1, 2, 3], 10), [1, 2, 3]);
+    assert.deepEqual(spreadPick([1, 2, 3], 0), [1, 2, 3]);
+  });
+
+  it("returns exactly max items", () => {
+    assert.equal(spreadPick(pool, 250).length, 250);
+  });
+
+  it("reaches the far end of the pool, which taking the first N never does", () => {
+    // The whole point: 3000 images per class are consecutive frames of one
+    // session, and the first 250 are a couple of seconds of it.
+    const picked = spreadPick(pool, 250);
+    assert.ok(picked.at(-1) > 2900, `last pick was ${picked.at(-1)}`);
+    assert.equal(picked[0], 0);
+  });
+
+  it("spaces picks evenly", () => {
+    const picked = spreadPick(pool, 250);
+    const gaps = picked.slice(1).map((v, i) => v - picked[i]);
+    assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 1, "gaps should be uniform");
+  });
+
+  it("keeps the pool's order", () => {
+    const picked = spreadPick(pool, 100);
+    assert.deepEqual(picked, picked.slice().sort((a, b) => a - b));
   });
 });

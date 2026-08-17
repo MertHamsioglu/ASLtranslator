@@ -28,7 +28,9 @@ import {
   capPerClass,
   labelFromPath,
   looksPreNormalized,
+  naturalCompare,
   parseLandmarkCsv,
+  spreadPick,
   synthesizeNone,
   tally,
 } from "../lib/importer";
@@ -103,11 +105,23 @@ export default function ImportPage() {
 
       // Cap by class before decoding, not after — otherwise you pay MediaPipe
       // for 87,000 images to keep 7,500 of them.
-      const seen = {};
+      //
+      // And spread the choice across each class's whole pool rather than
+      // taking the first N. Datasets are usually consecutive frames from a
+      // single recording session, so the first N is a couple of seconds of it.
+      // Measured on grassknoted/asl-alphabet: first-250 gave val_acc 0.965 and
+      // 57.3% on unseen frames; spread-250 gave val_acc 0.944 and 90.2%.
+      const byLabel = {};
+      for (const p of planned) (byLabel[p.label] ??= []).push(p);
       const queue = [];
-      for (const p of planned) {
-        seen[p.label] = (seen[p.label] ?? 0) + 1;
-        if (!cap || seen[p.label] <= cap) queue.push(p);
+      for (const label of Object.keys(byLabel).sort()) {
+        const pool = byLabel[label].sort((a, b) =>
+          naturalCompare(
+            a.file.webkitRelativePath || a.file.name,
+            b.file.webkitRelativePath || b.file.name,
+          ),
+        );
+        queue.push(...spreadPick(pool, cap));
       }
 
       let landmarker;
