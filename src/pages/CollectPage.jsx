@@ -8,6 +8,11 @@
  *
  *   { version: 1, recordedBy: "mert", samples: [{ label, features[63] }] }
  *
+ * Samples are held as RUNS rather than one flat list, so a fumbled capture can
+ * be thrown away without losing the session. A run is one press of Record: one
+ * class, one continuous take. That's the unit you actually regret, so that's
+ * the unit you can delete.
+ *
  * HOW TO RECORD, which matters more than anything in this file:
  * rotate and shift your hand slowly through the whole capture. Tilt forward and
  * back, rotate ~20 degrees each way, move nearer and farther, drift around the
@@ -15,7 +20,7 @@
  * and a model that collapses the moment someone holds their hand differently.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CLASSES, NONE_LABEL } from "../lib/contract";
 import { createHandTracker } from "../lib/handTracker";
 import { normalizeLandmarks } from "../lib/normalize";
@@ -24,6 +29,36 @@ const COUNTDOWN_SECONDS = 3;
 const DEFAULT_TARGET = 200;
 /** NONE has to cover far more variety than any single letter, so record more. */
 const NONE_TARGET = 400;
+
+const SESSION_KEY = "asl.session.v1";
+
+/**
+ * Decimal places kept per feature.
+ *
+ * Features are normalized into [-1, 1], so 5dp is a resolution of 1e-5 —
+ * orders of magnitude finer than MediaPipe's own landmark jitter, i.e. free.
+ * It matters because full float precision costs ~6MB for a full 5000-sample
+ * session, which overflows the ~5MB localStorage quota and would silently
+ * break the autosave that exists to stop you losing a session. At 5dp the
+ * same session is ~2.6MB. It halves the exported JSON too.
+ */
+const FEATURE_PRECISION = 5;
+
+const round = (features) =>
+  features.map((v) => Number(v.toFixed(FEATURE_PRECISION)));
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.runs) || parsed.runs.length === 0) return null;
+    return parsed;
+  } catch (err) {
+    console.warn("collect: could not restore session:", err);
+    return null;
+  }
+}
 
 export default function CollectPage() {
   const videoRef = useRef(null);
@@ -39,12 +74,16 @@ export default function CollectPage() {
   const [countdown, setCountdown] = useState(null);
   const [recording, setRecording] = useState(false);
   const [captured, setCaptured] = useState(0);
-  const [samples, setSamples] = useState([]);
+  const [runs, setRuns] = useState([]);
   const [error, setError] = useState(null);
+  const [restored, setRestored] = useState(null);
+  const [saveError, setSaveError] = useState(null);
 
   // The rAF callback must not close over stale state, so anything it reads
   // lives in a ref. `capture.current === null` means "not recording".
   const capture = useRef(null);
+  const countdownTimer = useRef(null);
+  const nextRunId = useRef(1);
 
   useEffect(() => {
     localStorage.setItem("asl.recordedBy", recordedBy);
@@ -53,6 +92,52 @@ export default function CollectPage() {
   useEffect(() => {
     setTarget(label === NONE_LABEL ? NONE_TARGET : DEFAULT_TARGET);
   }, [label]);
+
+  // Restore whatever the last session left behind. React state does not
+  // survive a reload, and a reload is not always something you chose: Vite
+  // hot-reloads this page whenever a source file changes, which silently
+  // wipes an in-progress capture. That has already cost one full session.
+  useEffect(() => {
+    const saved = loadSession();
+    if (!saved) return;
+    setRuns(saved.runs);
+    nextRunId.current = Math.max(0, ...saved.runs.map((r) => r.id)) + 1;
+    if (saved.recordedBy) setRecordedBy(saved.recordedBy);
+    setRestored({ runs: saved.runs.length, at: saved.savedAt ?? null });
+  }, []);
+
+  // Autosave after every change to the run list — one write per completed run
+  // or deletion, never per frame.
+  useEffect(() => {
+    if (runs.length === 0) {
+      localStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    try {
+      localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({ runs, recordedBy, savedAt: new Date().toISOString() }),
+      );
+      setSaveError(null);
+    } catch (err) {
+      // Quota exceeded is the realistic failure. Say so loudly and keep the
+      // in-memory runs — the download button is still the way out.
+      setSaveError(
+        `autosave failed (${err.name}). Download your JSON now — a reload will lose this session.`,
+      );
+    }
+  }, [runs, recordedBy]);
+
+  // Belt and braces for the reload the autosave can't cover.
+  useEffect(() => {
+    if (runs.length === 0) return undefined;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [runs.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,14 +191,17 @@ export default function CollectPage() {
         return;
       }
 
-      session.rows.push({ label: session.label, features });
+      session.rows.push({ label: session.label, features: round(features) });
       setCaptured(session.rows.length);
 
       if (session.rows.length >= session.target) {
         capture.current = null;
         setRecording(false);
-        setSamples((prev) => [...prev, ...session.rows]);
         setCaptured(0);
+        setRuns((prev) => [
+          ...prev,
+          { id: nextRunId.current++, label: session.label, rows: session.rows },
+        ]);
         setStatus(`captured ${session.rows.length} of ${session.label}`);
       }
     }
@@ -123,6 +211,7 @@ export default function CollectPage() {
     return () => {
       cancelled = true;
       capture.current = null;
+      if (countdownTimer.current) clearInterval(countdownTimer.current);
       tracker?.stop();
       stream?.getTracks().forEach((t) => t.stop());
       if (video) video.srcObject = null;
@@ -130,17 +219,18 @@ export default function CollectPage() {
   }, []);
 
   const record = useCallback(() => {
-    if (capture.current) return;
+    if (capture.current || countdownTimer.current) return;
     setCountdown(COUNTDOWN_SECONDS);
 
     let remaining = COUNTDOWN_SECONDS;
-    const timer = setInterval(() => {
+    countdownTimer.current = setInterval(() => {
       remaining -= 1;
       if (remaining > 0) {
         setCountdown(remaining);
         return;
       }
-      clearInterval(timer);
+      clearInterval(countdownTimer.current);
+      countdownTimer.current = null;
       setCountdown(null);
       setCaptured(0);
       capture.current = { label, target, rows: [] };
@@ -149,12 +239,55 @@ export default function CollectPage() {
     }, 1000);
   }, [label, target]);
 
+  /**
+   * Bail out of a take you already know is bad, without waiting for it to fill.
+   * Also cancels a pending countdown — that's when you usually notice you
+   * picked the wrong letter.
+   */
+  const cancelRun = useCallback(() => {
+    if (countdownTimer.current) {
+      clearInterval(countdownTimer.current);
+      countdownTimer.current = null;
+      setCountdown(null);
+      setStatus("countdown cancelled");
+      return;
+    }
+    if (!capture.current) return;
+    const { label: aborted, rows } = capture.current;
+    capture.current = null;
+    setRecording(false);
+    setCaptured(0);
+    setStatus(`discarded ${rows.length} frames of ${aborted}`);
+  }, []);
+
+  const deleteRun = useCallback((id) => {
+    setRuns((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  const deleteClass = useCallback((cls) => {
+    setRuns((prev) => prev.filter((r) => r.label !== cls));
+  }, []);
+
+  const undoLast = useCallback(() => {
+    setRuns((prev) => prev.slice(0, -1));
+  }, []);
+
+  const clearAll = useCallback(() => {
+    if (!window.confirm("Discard every run in this session? This cannot be undone.")) return;
+    setRuns([]);
+    setRestored(null);
+  }, []);
+
+  const samples = useMemo(() => runs.flatMap((r) => r.rows), [runs]);
+
+  const counts = useMemo(() => {
+    const out = {};
+    for (const run of runs) out[run.label] = (out[run.label] ?? 0) + run.rows.length;
+    return out;
+  }, [runs]);
+
   const download = useCallback(() => {
-    const payload = {
-      version: 1,
-      recordedBy: recordedBy || "unknown",
-      samples,
-    };
+    const payload = { version: 1, recordedBy: recordedBy || "unknown", samples };
     const stamp = new Date().toISOString().slice(0, 10);
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(payload)], { type: "application/json" }),
@@ -166,9 +299,8 @@ export default function CollectPage() {
     URL.revokeObjectURL(url);
   }, [recordedBy, samples]);
 
-  const counts = {};
-  for (const s of samples) counts[s.label] = (counts[s.label] ?? 0) + 1;
   const done = CLASSES.filter((c) => counts[c] > 0).length;
+  const busy = recording || countdown !== null;
 
   return (
     <main className="phase0">
@@ -178,9 +310,17 @@ export default function CollectPage() {
         {" · "}
         {handPresent ? `hand: ${handedness ?? "?"}` : "no hand"}
         {" · "}
-        {samples.length} samples · {done}/{CLASSES.length} classes
+        {samples.length} samples · {runs.length} runs · {done}/{CLASSES.length} classes
       </p>
       {error && <p className="meta error">{error}</p>}
+      {saveError && <p className="meta error">{saveError}</p>}
+      {restored && (
+        <p className="meta">
+          Restored {restored.runs} run{restored.runs === 1 ? "" : "s"} from your last
+          session{restored.at ? ` (saved ${new Date(restored.at).toLocaleString()})` : ""}.{" "}
+          <button onClick={() => setRestored(null)}>Dismiss</button>
+        </p>
+      )}
 
       <video ref={videoRef} playsInline muted />
 
@@ -195,7 +335,7 @@ export default function CollectPage() {
         </label>
         <label>
           class{" "}
-          <select value={label} onChange={(e) => setLabel(e.target.value)}>
+          <select value={label} onChange={(e) => setLabel(e.target.value)} disabled={busy}>
             {CLASSES.map((c) => (
               <option key={c} value={c}>
                 {c} {counts[c] ? `(${counts[c]})` : ""}
@@ -210,11 +350,15 @@ export default function CollectPage() {
             value={target}
             min={10}
             step={10}
+            disabled={busy}
             onChange={(e) => setTarget(Number(e.target.value))}
           />
         </label>
-        <button onClick={record} disabled={recording || countdown !== null || Boolean(error)}>
+        <button onClick={record} disabled={busy || Boolean(error)}>
           Record
+        </button>
+        <button onClick={cancelRun} disabled={!busy}>
+          Cancel run
         </button>
         <button onClick={download} disabled={samples.length === 0}>
           Download JSON
@@ -228,16 +372,70 @@ export default function CollectPage() {
         </div>
       )}
 
-      <table className="counts">
-        <tbody>
-          {CLASSES.map((c) => (
-            <tr key={c} className={counts[c] ? "" : "missing"}>
-              <td>{c}</td>
-              <td>{counts[c] ?? 0}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="split">
+        <section>
+          <h2>Runs</h2>
+          <div className="row">
+            <button onClick={undoLast} disabled={runs.length === 0 || busy}>
+              Undo last run
+            </button>
+            <button onClick={clearAll} disabled={runs.length === 0 || busy}>
+              Clear session
+            </button>
+          </div>
+          {runs.length === 0 ? (
+            <p className="meta">No runs yet. Each press of Record adds one.</p>
+          ) : (
+            <table className="counts">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>class</th>
+                  <th>frames</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => (
+                  <tr key={run.id}>
+                    <td>{run.id}</td>
+                    <td>{run.label}</td>
+                    <td>{run.rows.length}</td>
+                    <td>
+                      <button onClick={() => deleteRun(run.id)} disabled={busy}>
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        <section>
+          <h2>Per class</h2>
+          <table className="counts">
+            <tbody>
+              {CLASSES.map((c) => (
+                <tr key={c} className={counts[c] ? "" : "missing"}>
+                  <td>{c}</td>
+                  <td>{counts[c] ?? 0}</td>
+                  <td>
+                    <button
+                      onClick={() => deleteClass(c)}
+                      disabled={!counts[c] || busy}
+                      title={`Delete every run of ${c}`}
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      </div>
     </main>
   );
 }
