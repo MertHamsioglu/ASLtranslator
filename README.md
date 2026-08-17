@@ -10,13 +10,13 @@ no upload — video never leaves the machine.
 > "ASL translation" overstates what it does, and that overstatement is the thing Deaf users
 > push back on.
 
-**Status:** Phase 1 is complete on both halves and merged to `main` — Aaron's app shell
-(layout, overlay, commit/lockout, copy) and Mert's vision pipeline (tracking, normalization,
-capture, training, recognizer). **No classifier has been trained yet.** Until one lands in
-`public/model/`, the overlay tracks your real hand via MediaPipe but no letters commit —
-the app only falls back to the random mock if the tracker itself can't start. Capture at
-`/collect.html`, train at `/train.html`, then drop both output files in `public/model/`.
-Nothing below marked ⬜ exists yet.
+**Status:** working end to end. Both halves of Phase 1 are merged, and a trained
+classifier ships in `public/model/` — the app reads letters out of the box.
+
+That classifier scores **90.2% on held-out frames** but was trained entirely on one public
+dataset, so **it has never been tested on a live webcam or a second person.** Those are the
+two open questions, and they're the ones that decide whether this is actually good. See
+[Accuracy](#accuracy). Nothing below marked ⬜ exists yet.
 
 ---
 
@@ -29,16 +29,26 @@ npm install && npm run dev
 | URL | What it is | Owner |
 | --- | --- | --- |
 | `/` | the app | Aaron |
-| `/collect.html` | training-data capture | Mert |
+| `/collect.html` | record your own training data | Mert |
+| `/import.html` | convert a downloaded dataset instead | Mert |
 | `/train.html` | in-browser model training | Mert |
 
 Deny the camera prompt and the app still runs — you get the mock plus an error banner
 rather than a dead page. That's deliberate; see contract rule 4 in [SOW.md](SOW.md).
 
 ```bash
-npm test        # 34 tests — commit logic, normalization invariance, training pipeline
-npm run build   # tsc --noEmit, then all three entries
+npm test        # 66 tests — commit logic, normalization, import, training pipeline
+npm run build   # tsc --noEmit, then all four entries
 npm run lint    # oxlint
+npm run phase2  # generate a synthetic set + model in .phase2/, then score it
+```
+
+Training in a browser tab you then switch away from is a trap — Chrome throttles
+`requestAnimationFrame` to a crawl in background tabs and tfjs yields through it, so a
+60-epoch fit can stall for an hour. Train headlessly instead and it takes about 40 seconds:
+
+```bash
+node scripts/train-node.mjs data/your-capture.json
 ```
 
 ---
@@ -55,8 +65,8 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | ✅ | **Mock recognizer** | Three-state model (letter held / hand-in-transition / no hand) emitting letters, confidences, and a jittering 21-point pose. Verified against the contract over 431 ticks with zero violations. |
 | ✅ | **Live hand tracking** | MediaPipe `HandLandmarker`, single hand, 21 landmarks at ~30fps off `requestAnimationFrame`. |
 | ✅ | **Landmark normalization** | 21 points → 63 numbers invariant to position and distance from camera. Left hands are mirrored into right-hand space so one model covers both. |
-| 🔨 | **24-letter classifier** | Dense 63 → 64 → dropout 0.2 → softmax 25, trained in-browser with TF.js. |
-| 🔨 | **`NONE` class** | A 25th class for resting hands and mid-transition garbage. Without it the model reports confident letters continuously while you move between signs. |
+| ✅ | **24-letter classifier** | Dense 63 → 64 → dropout 0.2 → softmax 25. Shipped in `public/model/`. |
+| ✅ | **`NONE` class** | A 25th class for resting hands and mid-transition garbage. Without it the model reports confident letters continuously while you move between signs. |
 | ✅ | **Per-prediction confidence** | Raw softmax score, surfaced to the UI and used by the commit threshold. |
 | ✅ | **GPU with CPU fallback** | `delegate: "GPU"` fails outright on some machines; catch and retry on CPU rather than showing a blank screen. |
 | ✅ | **Mock escape hatch** | `VITE_USE_MOCK=1` forces the mock even after the model ships, so a bad retrain can't take down a demo. |
@@ -72,6 +82,14 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 | ✅ | **In-browser training** | No Python, no separate toolchain. Load one or more capture files, fit, download the model into `public/model/`. |
 | ✅ | **Per-class sample counts** | Shown before training starts. A class with 12 samples because a run got interrupted is invisible in the accuracy number and obvious in the counts. |
 | ✅ | **Validation-accuracy tracking** | Plotted per epoch. `val_acc` of 0.99 means you captured 200 near-identical frames, not that the model is good. |
+| ✅ | **Dataset importer** | `/import.html` converts a downloaded dataset — a folder of images or a raw-landmark CSV — into the same capture format, through the same normalization the live recognizer uses. |
+| ✅ | **Padding cascade** | Public datasets crop tight, and MediaPipe's palm detector wants margin. Trying the raw crop, then a 1.8× pad, then 1.3× took detection on the Kaggle set from 53.7% to 89.2%; five classes were at *zero* on the raw crop alone. |
+| ✅ | **Spread sampling** | Picks images evenly across each class's whole pool. Datasets are usually consecutive frames from one session, so taking the first N inflates `val_acc` by ~39 points against reality. |
+| ✅ | **Synthetic `NONE`** | No image dataset can supply `NONE` — its "nothing" class is empty background, which yields no hand and no row. Blending pairs of letter rows at 25–75% approximates a mid-transition pose. |
+| ✅ | **Headless training** | `scripts/train-node.mjs`, same `lib/train.js`. 40 seconds instead of stalling for an hour in a throttled background tab. |
+| ✅ | **Run deletion** | Capture is grouped into runs — one press of Record. Delete a fumbled one, undo the last, or clear a whole class, without losing the session. |
+| ✅ | **Session autosave** | Runs persist to `localStorage` after each take. A reload — including the hot reload Vite fires when a source file changes — no longer costs you the session. |
+| ✅ | **Per-file dataset toggle** | `/train.html` keeps loaded files separate with a checkbox each, so "with or without Aaron's data?" is one click rather than a reload. |
 
 ### App and interface
 
@@ -102,6 +120,36 @@ Legend: ✅ built · 🔨 next up · ⬜ planned · 💭 after the first working
 
 ---
 
+## Accuracy
+
+The shipped model, trained on 6,500 rows imported from grassknoted/asl-alphabet — 250 per
+letter spread across each class's 3,000 frames, plus 500 blended `NONE`:
+
+| measurement | score |
+| --- | --- |
+| `val_acc` at epoch 60 | 0.944 |
+| held-out split from the same import | 0.944 |
+| **disjoint frames the import never touched** | **0.902** over 599 images |
+| **a live webcam** | **not tested** |
+| **a second person** | **not tested** |
+
+Worst confusions are the ones the SOW predicted: U/V, M/N, T/`NONE`, Q/P.
+
+**Only the third row is a real generalization number, and the last two are the ones that
+matter.** An earlier version of this import took the first 250 images per class instead of
+spreading them, and reported `val_acc` **0.965** while scoring **57.3%** on unseen frames —
+V misread as K fifteen times out of fifteen. The dataset is consecutive frames from a
+single recording session, so adjacent images are near-duplicates and `validationSplit`
+was holding out copies of the training rows. A 39-point lie, invisible from inside the
+training run.
+
+Treat any accuracy figure here as provisional until someone points a camera at it.
+If it struggles on your hand, a few minutes of your own `/collect.html` recording layered
+on top is the fix — [PR #7](https://github.com/MertHamsioglu/ASLtranslator/pull/7)'s
+per-file toggle exists to make that comparison one click.
+
+---
+
 ## Non-goals
 
 - **Not a translator.** No grammar, no syntax, no non-manual markers.
@@ -120,13 +168,18 @@ Vite 8 · React 19 · TypeScript (app shell) · `@mediapipe/tasks-vision` 1.0.1 
 src/lib/contract.js       shared constants — CLASSES, HAND_CONNECTIONS. Frozen.
 src/lib/recognizer.js     the interface between the two halves
 src/lib/mockRecognizer.ts fake predictions that satisfy that interface
-src/lib/handTracker.js    MediaPipe wrapper
+src/lib/handTracker.js    MediaPipe wrapper — video loop and still-image modes
 src/lib/normalize.js      21 landmarks -> 63 invariant features
-src/lib/train.js          dataset merge + training
-src/pages/                collect and train tools (own Vite entries)
+src/lib/train.js          dataset merge, shuffle, fit, confusion matrix
+src/lib/importer.js       dataset conversion: labels, CSV, NONE synthesis, sampling
+src/pages/                collect, import and train tools (own Vite entries)
+src/components-mert/      charts for those tools — components/ is Aaron's
 src/App.tsx               the app
-data/                     captured training sets, committed
-public/model/             the trained model
+scripts/train-node.mjs    headless training, writes public/model/
+scripts/phase2-*.mjs      synthetic scoring harness (npm run phase2)
+data/                     captured and imported training sets
+public/model/             the trained model the app loads
+.phase2/                  gitignored scratch — never let a stand-in model reach public/model/
 ```
 
 ## Working on it
