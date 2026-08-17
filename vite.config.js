@@ -11,6 +11,7 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 //   /              main app          Aaron
 //   /collect.html  capture mode      Mert (M3)
 //   /train.html    training mode     Mert (M4)
+//   /import.html   dataset import    Mert
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -29,6 +30,7 @@ export default defineConfig({
         main: resolve(root, "index.html"),
         collect: resolve(root, "collect.html"),
         train: resolve(root, "train.html"),
+        import: resolve(root, "import.html"),
       },
     },
   },

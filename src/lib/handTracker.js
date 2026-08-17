@@ -36,6 +36,57 @@ async function createLandmarker(delegate) {
 }
 
 /**
+ * Still-image landmarker, for importing an existing photo dataset rather than
+ * recording. Same MediaPipe model, RunningMode IMAGE instead of VIDEO — the
+ * VIDEO mode carries tracking state between frames, which is wrong for a pile
+ * of unrelated stills and makes each detection depend on the file before it.
+ *
+ *   createImageLandmarker() -> { detect(source), close() }
+ *   detect(ImageBitmap|HTMLImageElement) -> { landmarks, handedness } | null
+ *
+ * Returns null when no hand is found, which is a normal outcome on real
+ * datasets — the caller should count it, not treat it as an error.
+ */
+export async function createImageLandmarker() {
+  const { HandLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
+  const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
+
+  async function create(delegate) {
+    return HandLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: MODEL_URL, delegate },
+      runningMode: "IMAGE",
+      numHands: 1,
+    });
+  }
+
+  let landmarker;
+  let delegate = "GPU";
+  try {
+    landmarker = await create("GPU");
+  } catch (err) {
+    console.warn("imageLandmarker: GPU delegate failed, falling back to CPU:", err);
+    delegate = "CPU";
+    landmarker = await create("CPU");
+  }
+
+  return {
+    delegate,
+    detect(source) {
+      const result = landmarker.detect(source);
+      const landmarks = result.landmarks?.[0];
+      if (!landmarks) return null;
+      return {
+        landmarks,
+        handedness: result.handedness?.[0]?.[0]?.categoryName ?? null,
+      };
+    },
+    close() {
+      landmarker.close();
+    },
+  };
+}
+
+/**
  * @param {{ onFrame: (frame: {landmarks: object[]|null, handedness: string|null}) => void }} opts
  */
 export async function createHandTracker({ onFrame }) {
