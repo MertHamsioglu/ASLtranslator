@@ -30,6 +30,36 @@ const DEFAULT_TARGET = 200;
 /** NONE has to cover far more variety than any single letter, so record more. */
 const NONE_TARGET = 400;
 
+const SESSION_KEY = "asl.session.v1";
+
+/**
+ * Decimal places kept per feature.
+ *
+ * Features are normalized into [-1, 1], so 5dp is a resolution of 1e-5 —
+ * orders of magnitude finer than MediaPipe's own landmark jitter, i.e. free.
+ * It matters because full float precision costs ~6MB for a full 5000-sample
+ * session, which overflows the ~5MB localStorage quota and would silently
+ * break the autosave that exists to stop you losing a session. At 5dp the
+ * same session is ~2.6MB. It halves the exported JSON too.
+ */
+const FEATURE_PRECISION = 5;
+
+const round = (features) =>
+  features.map((v) => Number(v.toFixed(FEATURE_PRECISION)));
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.runs) || parsed.runs.length === 0) return null;
+    return parsed;
+  } catch (err) {
+    console.warn("collect: could not restore session:", err);
+    return null;
+  }
+}
+
 export default function CollectPage() {
   const videoRef = useRef(null);
   const [status, setStatus] = useState("starting");
@@ -46,6 +76,8 @@ export default function CollectPage() {
   const [captured, setCaptured] = useState(0);
   const [runs, setRuns] = useState([]);
   const [error, setError] = useState(null);
+  const [restored, setRestored] = useState(null);
+  const [saveError, setSaveError] = useState(null);
 
   // The rAF callback must not close over stale state, so anything it reads
   // lives in a ref. `capture.current === null` means "not recording".
@@ -61,8 +93,42 @@ export default function CollectPage() {
     setTarget(label === NONE_LABEL ? NONE_TARGET : DEFAULT_TARGET);
   }, [label]);
 
-  // Nothing here is persisted. Losing a 30-minute session to a stray Cmd-R is
-  // a worse outcome than a confirm dialog.
+  // Restore whatever the last session left behind. React state does not
+  // survive a reload, and a reload is not always something you chose: Vite
+  // hot-reloads this page whenever a source file changes, which silently
+  // wipes an in-progress capture. That has already cost one full session.
+  useEffect(() => {
+    const saved = loadSession();
+    if (!saved) return;
+    setRuns(saved.runs);
+    nextRunId.current = Math.max(0, ...saved.runs.map((r) => r.id)) + 1;
+    if (saved.recordedBy) setRecordedBy(saved.recordedBy);
+    setRestored({ runs: saved.runs.length, at: saved.savedAt ?? null });
+  }, []);
+
+  // Autosave after every change to the run list — one write per completed run
+  // or deletion, never per frame.
+  useEffect(() => {
+    if (runs.length === 0) {
+      localStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    try {
+      localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({ runs, recordedBy, savedAt: new Date().toISOString() }),
+      );
+      setSaveError(null);
+    } catch (err) {
+      // Quota exceeded is the realistic failure. Say so loudly and keep the
+      // in-memory runs — the download button is still the way out.
+      setSaveError(
+        `autosave failed (${err.name}). Download your JSON now — a reload will lose this session.`,
+      );
+    }
+  }, [runs, recordedBy]);
+
+  // Belt and braces for the reload the autosave can't cover.
   useEffect(() => {
     if (runs.length === 0) return undefined;
     const warn = (e) => {
@@ -125,7 +191,7 @@ export default function CollectPage() {
         return;
       }
 
-      session.rows.push({ label: session.label, features });
+      session.rows.push({ label: session.label, features: round(features) });
       setCaptured(session.rows.length);
 
       if (session.rows.length >= session.target) {
@@ -207,8 +273,9 @@ export default function CollectPage() {
   }, []);
 
   const clearAll = useCallback(() => {
-    if (!window.confirm("Discard every run in this session?")) return;
+    if (!window.confirm("Discard every run in this session? This cannot be undone.")) return;
     setRuns([]);
+    setRestored(null);
   }, []);
 
   const samples = useMemo(() => runs.flatMap((r) => r.rows), [runs]);
@@ -246,6 +313,14 @@ export default function CollectPage() {
         {samples.length} samples · {runs.length} runs · {done}/{CLASSES.length} classes
       </p>
       {error && <p className="meta error">{error}</p>}
+      {saveError && <p className="meta error">{saveError}</p>}
+      {restored && (
+        <p className="meta">
+          Restored {restored.runs} run{restored.runs === 1 ? "" : "s"} from your last
+          session{restored.at ? ` (saved ${new Date(restored.at).toLocaleString()})` : ""}.{" "}
+          <button onClick={() => setRestored(null)}>Dismiss</button>
+        </p>
+      )}
 
       <video ref={videoRef} playsInline muted />
 
