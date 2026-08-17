@@ -115,7 +115,7 @@ export default function App() {
     <div className="app">
       <main className="shell">
         <section className="stage" aria-label="Camera">
-          <p className="brand">Fingerspell</p>
+          <p className="brand">asltranslate</p>
           <div className="well">
             <video ref={videoRef} playsInline muted />
             <HandOverlay landmarks={prediction.landmarks} />
