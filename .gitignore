@@ -50,3 +50,9 @@ pnpm-debug.log*
 data/raw/
 *.webm
 *.mov
+
+# Phase 2 harness scratch — synthetic captures and a stand-in model.
+# NEVER let a stand-in model reach public/model/: createRecognizer loads that
+# path, and a fake classifier there makes the app commit wrong letters with no
+# warning, which is worse than having no model at all.
+.phase2/

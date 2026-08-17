@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "lint": "oxlint",
     "test": "node --experimental-strip-types --test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "phase2": "node scripts/phase2-prepare.mjs && node scripts/phase2-score.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
